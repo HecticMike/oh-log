@@ -23,6 +23,11 @@ export type DriveFileMeta = {
   modifiedTime?: string;
 };
 
+export type DriveUserInfo = {
+  emailAddress?: string;
+  displayName?: string;
+};
+
 declare global {
   interface Window {
     google?: {
@@ -296,6 +301,15 @@ export async function pickDriveFolder(title: string): Promise<PickedDriveFile> {
 
     builder.build().setVisible(true);
   });
+}
+
+export async function getDriveUser(): Promise<DriveUserInfo> {
+  const response = await fetchWithAuth(
+    `${DRIVE_API_BASE}/about?fields=user(displayName,emailAddress)`,
+    { method: 'GET' }
+  );
+  const data = await response.json();
+  return data.user ?? {};
 }
 
 export async function createDriveJsonFile(

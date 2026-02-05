@@ -18,6 +18,7 @@ import {
 import {
   connectDrive,
   createDriveJsonFile,
+  getDriveUser,
   isDriveConfigured,
   pickDriveFile,
   pickDriveFolder,
@@ -469,6 +470,8 @@ type SettingsViewProps = {
   logFileName?: string;
   drive: DriveState;
   lastSyncISO?: string | null;
+  driveAccountEmail?: string | null;
+  folderNotice?: string | null;
   onConnect: () => Promise<void>;
   onPickFile: (kind: 'household' | 'log') => Promise<void>;
   onPickFolderAndCreate: () => Promise<void>;
@@ -483,6 +486,8 @@ const SettingsView = ({
   logFileName,
   drive,
   lastSyncISO,
+  driveAccountEmail,
+  folderNotice,
   onConnect,
   onPickFile,
   onPickFolderAndCreate,
@@ -527,34 +532,38 @@ const SettingsView = ({
         <div className="wizard">
           <h3>Setup Wizard</h3>
           <p>Use the same Drive files on multiple phones to keep data in sync.</p>
-          <div className="wizard-step">
-            <div className="step-label">Step 1</div>
-            <div>
-              <strong>Sign in with Google</strong>
-              <p>Authorize Drive access (drive.file scope only).</p>
-            </div>
-            <button type="button" className="primary" onClick={onConnect} disabled={drive.busy || !isDriveConfigured()}>
-              {drive.connected ? 'Signed in' : 'Sign in with Google'}
-            </button>
-          </div>
-          <div className={`wizard-step ${setupStep === 'choose' ? '' : 'disabled'}`}>
+      <div className="wizard-step">
+        <div className="step-label">Step 1</div>
+        <div>
+          <strong>Sign in with Google</strong>
+          <p>Authorize Drive access (drive.file scope only).</p>
+          <p className="helper-text">
+            Signed in as {driveAccountEmail ?? 'your Google account'}.
+          </p>
+        </div>
+        <button type="button" className="primary" onClick={onConnect} disabled={drive.busy || !isDriveConfigured()}>
+          {drive.connected ? 'Signed in' : 'Sign in with Google'}
+        </button>
+      </div>
+      <div className={`wizard-step ${setupStep === 'choose' ? '' : 'disabled'}`}>
             <div className="step-label">Step 2</div>
             <div>
               <strong>Choose data files</strong>
               <p>Create new shared files or pick existing ones.</p>
-            </div>
-            <div className="wizard-actions">
-              <button type="button" onClick={onPickFolderAndCreate} disabled={!drive.connected || drive.busy}>
-                Create new shared data files
-              </button>
-              <button type="button" onClick={() => onPickFile('household')} disabled={!drive.connected || drive.busy}>
-                Pick existing household.json
-              </button>
-              <button type="button" onClick={() => onPickFile('log')} disabled={!drive.connected || drive.busy}>
-                Pick existing our-health-log.json
-              </button>
-            </div>
-          </div>
+        </div>
+        <div className="wizard-actions">
+          <button type="button" onClick={onPickFolderAndCreate} disabled={!drive.connected || drive.busy}>
+            Create new shared data files
+          </button>
+          <button type="button" onClick={() => onPickFile('household')} disabled={!drive.connected || drive.busy}>
+            Pick existing household.json
+          </button>
+          <button type="button" onClick={() => onPickFile('log')} disabled={!drive.connected || drive.busy}>
+            Pick existing our-health-log.json
+          </button>
+        </div>
+        {folderNotice && <p className="message small">{folderNotice}</p>}
+      </div>
           {!isDriveConfigured() && (
             <p className="message">Configure VITE_GOOGLE_CLIENT_ID and VITE_GOOGLE_API_KEY in .env.local first.</p>
           )}
@@ -626,6 +635,8 @@ export default function App() {
   const [logState, setLogState] = useState<DriveFileState<LogData> | null>(null);
   const [localMessage, setLocalMessage] = useState<string | null>(null);
   const [lastSyncISO, setLastSyncISO] = useState<string | null>(null);
+  const [driveAccountEmail, setDriveAccountEmail] = useState<string | null>(null);
+  const [folderNotice, setFolderNotice] = useState<string | null>(null);
 
   useEffect(() => {
     const onHashChange = () => setRoute(routeFromHash());
@@ -655,6 +666,15 @@ export default function App() {
     }
   }, []);
 
+  const refreshDriveAccount = useCallback(async () => {
+    try {
+      const user = await getDriveUser();
+      setDriveAccountEmail(user.emailAddress ?? null);
+    } catch (err) {
+      console.warn('Could not fetch Drive account info', err);
+    }
+  }, []);
+
   const handleConnect = async () => {
     setBusy(true);
     setDriveMessage(null);
@@ -662,6 +682,7 @@ export default function App() {
       await connectDrive();
       setDrive((prev) => ({ ...prev, connected: true }));
       await loadStoredFiles();
+      await refreshDriveAccount();
     } catch (err) {
       setDriveMessage((err as Error).message);
     } finally {
@@ -700,6 +721,7 @@ export default function App() {
   const handlePickFolderAndCreate = async () => {
     setBusy(true);
     setDriveMessage(null);
+    setFolderNotice(null);
     try {
       if (!drive.connected) {
         await connectDrive();
@@ -726,9 +748,13 @@ export default function App() {
         modifiedTime: logResult.meta.modifiedTime,
         data: logTemplate
       });
-      setLastSyncISO(nowISO());
+        setLastSyncISO(nowISO());
+      await refreshDriveAccount();
     } catch (err) {
       setDriveMessage((err as Error).message);
+      if ((err as Error).message.includes('No folder selected') || (err as Error).message.includes('Picker closed')) {
+        setFolderNotice('If you created the folder in another Google account, switch accounts and try again.');
+      }
     } finally {
       setBusy(false);
     }
@@ -1018,6 +1044,8 @@ export default function App() {
       logFileName={logState?.name}
       drive={drive}
       lastSyncISO={lastSyncISO}
+      driveAccountEmail={driveAccountEmail}
+      folderNotice={folderNotice}
       onConnect={handleConnect}
       onPickFile={handlePickFile}
       onPickFolderAndCreate={handlePickFolderAndCreate}
