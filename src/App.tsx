@@ -35,6 +35,12 @@ import {
   setStoredLogFileId,
   type DriveFileState
 } from './lib/storage';
+import {
+  GOOGLE_API_KEY_DEFINED,
+  GOOGLE_API_KEY_MASKED,
+  GOOGLE_APP_ID,
+  GOOGLE_CLIENT_ID_DEFINED
+} from './config';
 
 const formatDateTime = (iso?: string | null) => (iso ? new Date(iso).toLocaleString() : '');
 const formatDate = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString() : '');
@@ -464,6 +470,14 @@ const EpisodeView = ({
     </section>
   );
 };
+type DiagnosticsInfo = {
+  origin: string;
+  clientIdConfigured: boolean;
+  apiKeyConfigured: boolean;
+  apiKeyMasked: string;
+  appId: string;
+};
+
 type SettingsViewProps = {
   members: Member[];
   householdFileName?: string;
@@ -472,6 +486,7 @@ type SettingsViewProps = {
   lastSyncISO?: string | null;
   driveAccountEmail?: string | null;
   folderNotice?: string | null;
+  diagnostics: DiagnosticsInfo;
   onConnect: () => Promise<void>;
   onPickFile: (kind: 'household' | 'log') => Promise<void>;
   onPickFolderAndCreate: () => Promise<void>;
@@ -488,6 +503,7 @@ const SettingsView = ({
   lastSyncISO,
   driveAccountEmail,
   folderNotice,
+  diagnostics,
   onConnect,
   onPickFile,
   onPickFolderAndCreate,
@@ -602,6 +618,30 @@ const SettingsView = ({
           </button>
         </div>
         <div className="settings-card">
+          <h3>Drive diagnostics</h3>
+          <p>Quick checks for your Google credentials.</p>
+          <div className="status-row">
+            <span>Signed-in origin</span>
+            <strong>{diagnostics.origin}</strong>
+          </div>
+          <div className="status-row">
+            <span>Client ID present</span>
+            <strong>{diagnostics.clientIdConfigured ? 'Yes' : 'No'}</strong>
+          </div>
+          <div className="status-row">
+            <span>API key present</span>
+            <strong>{diagnostics.apiKeyConfigured ? 'Yes' : 'No'}</strong>
+          </div>
+          <div className="status-row">
+            <span>API key masked</span>
+            <strong>{diagnostics.apiKeyMasked}</strong>
+          </div>
+          <div className="status-row">
+            <span>App ID</span>
+            <strong>{diagnostics.appId || 'Not set'}</strong>
+          </div>
+        </div>
+        <div className="settings-card">
           <h3>Household</h3>
           <p>Update member names and accent colors.</p>
           <div className="form-grid">
@@ -637,6 +677,29 @@ export default function App() {
   const [lastSyncISO, setLastSyncISO] = useState<string | null>(null);
   const [driveAccountEmail, setDriveAccountEmail] = useState<string | null>(null);
   const [folderNotice, setFolderNotice] = useState<string | null>(null);
+
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173';
+  const diagnostics = useMemo(
+    () => ({
+      origin,
+      clientIdConfigured: GOOGLE_CLIENT_ID_DEFINED,
+      apiKeyConfigured: GOOGLE_API_KEY_DEFINED,
+      apiKeyMasked: GOOGLE_API_KEY_MASKED,
+      appId: GOOGLE_APP_ID || ''
+    }),
+    []
+  );
+  const developerKeyChecklist =
+    'Developer key invalid. Ensure the API key allows https://<owner>.github.io/<repo>/, the Google Picker API is enabled before applying restrictions, and clear the PWA/service worker cache before rerunning.';
+  const annotateDeveloperKeyError = (err: unknown): boolean => {
+    const message = err instanceof Error ? err.message : String(err);
+    const lower = message.toLowerCase();
+    if (lower.includes('developer key') && lower.includes('invalid')) {
+      setFolderNotice(developerKeyChecklist);
+      return true;
+    }
+    return false;
+  };
 
   useEffect(() => {
     const onHashChange = () => setRoute(routeFromHash());
@@ -693,6 +756,7 @@ export default function App() {
   const handlePickFile = async (kind: 'household' | 'log') => {
     setBusy(true);
     setDriveMessage(null);
+    setFolderNotice(null);
     try {
       if (!drive.connected) {
         await connectDrive();
@@ -713,6 +777,9 @@ export default function App() {
       setLastSyncISO(nowISO());
     } catch (err) {
       setDriveMessage((err as Error).message);
+      if (annotateDeveloperKeyError(err)) {
+        return;
+      }
     } finally {
       setBusy(false);
     }
@@ -722,6 +789,11 @@ export default function App() {
     setBusy(true);
     setDriveMessage(null);
     setFolderNotice(null);
+    if (!GOOGLE_API_KEY_DEFINED) {
+      setFolderNotice('Missing VITE_GOOGLE_API_KEY in build - check GitHub Actions secrets.');
+      setBusy(false);
+      return;
+    }
     try {
       if (!drive.connected) {
         await connectDrive();
@@ -752,6 +824,9 @@ export default function App() {
       await refreshDriveAccount();
     } catch (err) {
       setDriveMessage((err as Error).message);
+      if (annotateDeveloperKeyError(err)) {
+        return;
+      }
       if ((err as Error).message.includes('No folder selected') || (err as Error).message.includes('Picker closed')) {
         setFolderNotice('If you created the folder in another Google account, switch accounts and try again.');
       }
@@ -1038,17 +1113,18 @@ export default function App() {
   };
 
   const renderSettings = () => (
-    <SettingsView
-      members={members}
-      householdFileName={householdState?.name}
-      logFileName={logState?.name}
-      drive={drive}
-      lastSyncISO={lastSyncISO}
-      driveAccountEmail={driveAccountEmail}
-      folderNotice={folderNotice}
-      onConnect={handleConnect}
-      onPickFile={handlePickFile}
-      onPickFolderAndCreate={handlePickFolderAndCreate}
+      <SettingsView
+        members={members}
+        householdFileName={householdState?.name}
+        logFileName={logState?.name}
+        drive={drive}
+        lastSyncISO={lastSyncISO}
+        driveAccountEmail={driveAccountEmail}
+        folderNotice={folderNotice}
+        diagnostics={diagnostics}
+        onConnect={handleConnect}
+        onPickFile={handlePickFile}
+        onPickFolderAndCreate={handlePickFolderAndCreate}
       onSaveMembers={handleSaveMembers}
       onNavigate={navigate}
       hasFiles={hasFiles}

@@ -71,9 +71,16 @@ The GitHub Actions workflow in `.github/workflows/deploy.yml` builds and deploys
 
 1. Enable Pages in the repo settings and select “GitHub Actions” as the source.
 2. Add the secrets `VITE_GOOGLE_CLIENT_ID`, `VITE_GOOGLE_API_KEY`, and (optional) `VITE_GOOGLE_APP_ID`.
-3. In Settings → Pages, confirm “Source: GitHub Actions”.
-4. In the Actions tab, run the **Deploy Our Health** workflow when ready and visit `https://<owner>.github.io/<repo>/` after the Pages job completes.
-3. Push to `main` or trigger the workflow manually, then visit `https://<owner>.github.io/<repo>/` once the deploy picks up.
+3. In Settings → Pages, confirm “Source: GitHub Actions.”
+4. Push to `main` (or trigger the workflow manually) so the **Deploy Our Health** workflow runs and publishes `https://<owner>.github.io/<repo>/`.
+5. Use the diagnostics panel in Settings to verify the signed-in origin, client ID/API key presence and the masked API key suffix.
+
+## If you see “Developer key invalid”
+If Picker reports “Developer key invalid,” the diagnostics panel and the folder notice will remind you what to try next:
+
+1. Allow `https://<owner>.github.io/<repo>/` (and any local dev origin) in the API key’s referrer restrictions, or temporarily remove restrictions while you verify the flow.
+2. Enable the Google Picker API for the same Google project before tightening restrictions.
+3. Clear the PWA/service worker cache (DevTools → Application → Clear storage) and reload the page.
 
 ## Google Cloud checklist
 1. Configure a Web OAuth client ID with authorized JavaScript origins that include both `https://<owner>.github.io/<repo>/` and `http://localhost:5173`.
