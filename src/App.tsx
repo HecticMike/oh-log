@@ -705,7 +705,7 @@ export default function App() {
     'Developer key invalid. Ensure the API key allows https://<owner>.github.io/<repo>/, the Google Picker API is enabled before applying restrictions, and clear the PWA/service worker cache before rerunning.';
   const blockedAccountChecklist =
     'Cannot access your Google account. Check your OAuth JavaScript origin (https://<owner>.github.io), add this account as a test user, and allow cross-site tracking/cookies in Safari before trying again.';
-  const annotateDriverError = (err: unknown): boolean => {
+  const annotateDeveloperKeyError = (err: unknown): boolean => {
     const message = err instanceof Error ? err.message : String(err);
     const lower = message.toLowerCase();
     if (lower.includes('developer key') && lower.includes('invalid')) {
