@@ -19,6 +19,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Ensure env vars
+        env:
+          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
+          VITE_GOOGLE_API_KEY: ${{ secrets.VITE_GOOGLE_API_KEY }}
+        run: |
+          if [ -z "${VITE_GOOGLE_CLIENT_ID}" ] || [ -z "${VITE_GOOGLE_API_KEY}" ]; then
+            echo "ERROR: VITE_GOOGLE_CLIENT_ID and VITE_GOOGLE_API_KEY must be defined as secrets."
+            exit 1
+          fi
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
@@ -35,7 +44,7 @@ jobs:
       - name: Configure Pages
         uses: actions/configure-pages@v4
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v1
+        uses: actions/upload-pages-artifact@v3
         with:
           path: ./dist
 
