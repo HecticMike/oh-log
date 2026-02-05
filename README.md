@@ -33,7 +33,7 @@ Templates are provided in `data/templates/`:
 3. Copy `.env.example` to `.env.local` and fill in:
    - `VITE_GOOGLE_CLIENT_ID`
    - `VITE_GOOGLE_API_KEY`
-   - (Optional) `VITE_GOOGLE_APP_ID`
+   - `VITE_GOOGLE_APP_ID` (project number; required for folder creation)
 
 No secrets are committed to this repository. `.env.local` is ignored.
 
@@ -74,6 +74,7 @@ The GitHub Actions workflow in `.github/workflows/deploy.yml` builds and deploys
 3. In Settings → Pages, confirm “Source: GitHub Actions.”
 4. Push to `main` (or trigger the workflow manually) so the **Deploy Our Health** workflow runs and publishes `https://<owner>.github.io/<repo>/`.
 5. Use the diagnostics panel in Settings to verify the signed-in origin, client ID/API key presence and the masked API key suffix.
+   The panel also shows the App ID; set `VITE_GOOGLE_APP_ID` to the Google Cloud project number to enable folder creation.
 
 ## If you see “Developer key invalid”
 If Picker reports “Developer key invalid,” the diagnostics panel and the folder notice will remind you what to try next:

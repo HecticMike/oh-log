@@ -39,6 +39,7 @@ import {
   GOOGLE_API_KEY_DEFINED,
   GOOGLE_API_KEY_MASKED,
   GOOGLE_APP_ID,
+  GOOGLE_APP_ID_DEFINED,
   GOOGLE_CLIENT_ID_DEFINED
 } from './config';
 
@@ -476,6 +477,7 @@ type DiagnosticsInfo = {
   apiKeyConfigured: boolean;
   apiKeyMasked: string;
   appId: string;
+  appIdConfigured: boolean;
 };
 
 type SettingsViewProps = {
@@ -567,10 +569,14 @@ const SettingsView = ({
               <strong>Choose data files</strong>
               <p>Create new shared files or pick existing ones.</p>
         </div>
-        <div className="wizard-actions">
-          <button type="button" onClick={onPickFolderAndCreate} disabled={!drive.connected || drive.busy}>
-            Create new shared data files
-          </button>
+          <div className="wizard-actions">
+            <button
+              type="button"
+              onClick={onPickFolderAndCreate}
+              disabled={!drive.connected || drive.busy || !diagnostics.appIdConfigured}
+            >
+              Create new shared data files
+            </button>
           <button type="button" onClick={() => onPickFile('household')} disabled={!drive.connected || drive.busy}>
             Pick existing household.json
           </button>
@@ -583,7 +589,12 @@ const SettingsView = ({
           {!isDriveConfigured() && (
             <p className="message">Configure VITE_GOOGLE_CLIENT_ID and VITE_GOOGLE_API_KEY in .env.local first.</p>
           )}
-          {drive.message && <p className="message">{drive.message}</p>}
+            {drive.message && <p className="message">{drive.message}</p>}
+            {!diagnostics.appIdConfigured && (
+              <p className="message small">
+                Set `VITE_GOOGLE_APP_ID` to your Google Cloud project number (Console → Project info) before creating shared files.
+              </p>
+            )}
         </div>
       )}
 
@@ -685,17 +696,24 @@ export default function App() {
       clientIdConfigured: GOOGLE_CLIENT_ID_DEFINED,
       apiKeyConfigured: GOOGLE_API_KEY_DEFINED,
       apiKeyMasked: GOOGLE_API_KEY_MASKED,
-      appId: GOOGLE_APP_ID || ''
+      appId: GOOGLE_APP_ID || '',
+      appIdConfigured: GOOGLE_APP_ID_DEFINED
     }),
     []
   );
   const developerKeyChecklist =
     'Developer key invalid. Ensure the API key allows https://<owner>.github.io/<repo>/, the Google Picker API is enabled before applying restrictions, and clear the PWA/service worker cache before rerunning.';
-  const annotateDeveloperKeyError = (err: unknown): boolean => {
+  const blockedAccountChecklist =
+    'Cannot access your Google account. Check your OAuth JavaScript origin (https://<owner>.github.io), add this account as a test user, and allow cross-site tracking/cookies in Safari before trying again.';
+  const annotateDriverError = (err: unknown): boolean => {
     const message = err instanceof Error ? err.message : String(err);
     const lower = message.toLowerCase();
     if (lower.includes('developer key') && lower.includes('invalid')) {
       setFolderNotice(developerKeyChecklist);
+      return true;
+    }
+    if (lower.includes('cannot access') && lower.includes('google account')) {
+      setFolderNotice(blockedAccountChecklist);
       return true;
     }
     return false;
