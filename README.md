@@ -1,99 +1,85 @@
-# PsA Logbook
+﻿# Our Health
 
-PsA Logbook is a mobile-first PWA for psoriatic arthritis tracking. It keeps every entry local-first with fast logging, filters, and optional Google Drive backup/restore that writes to a visible `PsA-Logbook` folder plus a `psa-logbook-data.json` file. No backend is required, and tokens stay in memory only.
+Our Health is a client-only, PWA-friendly web app for household illness tracking. All personal data lives in Google Drive files selected via Google Picker. The repository ships only with templates (no real household data).
 
-## Lookup lists
+## MVP Features
+- Household profiles from `household.json` (4 members with name + accent color)
+- Per-person illness episodes (category, symptoms, severity, notes)
+- Per-episode temperature log with chart
+- Per-episode medication log with Drive-backed catalog (type-ahead + recent/favorites)
+- Drive access limited to user-selected files (`drive.file` scope)
+- Optimistic merge on save to handle edits from multiple devices
+- Setup Wizard for two-phone/shared file onboarding
 
-Dropdown options for regions, joints, symptoms, triggers, actions, and timeframes are maintained inside `src/lib/lookups.ts`. Edit that file to change labels or add new entries (stable keys are essential so saved records keep matching). Each list includes an `OTHER_KEY` entry to surface a free-text box when “Other” is chosen.
-Finger and toe drilldowns rely on stable joints (MCP, PIP, DIP, IP, CMC, MTP) to keep exports deterministic; use the Notes field for anatomy not covered above.
+## Data Files
+The app expects two JSON files in Google Drive:
+- `household.json`
+- `our-health-log.json`
 
-## Local development
+Templates are provided in `data/templates/`:
+- `data/templates/household.template.json`
+- `data/templates/our-health-log.template.json`
 
-1. `npm install`
-2. `npm run dev`
-   - Starts Vite on `http://localhost:5173` (or the host/port you pass). Kill it once you see the server logs.
-3. `npm run typecheck`
-4. `npm run build`
+## Setup
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
+2. Configure Google APIs:
+   - Create an OAuth client ID (Web) in Google Cloud Console.
+   - Add your GitHub Pages origin (for example, `https://YOUR_USER.github.io`) and local dev origin (`http://localhost:5173`) to the authorized JavaScript origins.
+   - Enable the Google Drive API for the project.
+   - Create an API key (required for Google Picker).
+3. Copy `.env.example` to `.env.local` and fill in:
+   - `VITE_GOOGLE_CLIENT_ID`
+   - `VITE_GOOGLE_API_KEY`
+   - (Optional) `VITE_GOOGLE_APP_ID`
 
-The app loads the Google Identity Services script (`https://accounts.google.com/gsi/client`) so Drive controls appear once you supply a real client ID (see below).
+No secrets are committed to this repository. `.env.local` is ignored.
 
-## Google Drive backup setup
+### Env vars
+- `VITE_GOOGLE_CLIENT_ID`, `VITE_GOOGLE_API_KEY`, and optional `VITE_GOOGLE_APP_ID` are consumed by `src/config.ts` via `import.meta.env`.
+- For GitHub Pages the workflow injects `VITE_BASE=/‌<repo>/` so the app and manifest respect the repo-specific base path.
 
-1. In Google Cloud Console:
-   - Create a project or reuse one.
-   - Enable the Google Drive API.
-   - Configure the OAuth consent screen for external/first-party users.
-  - Create an **OAuth client ID → Web application**, then add authorized JS origins for:
-    - `http://localhost:5173`
-    - `https://<your-github-username>.github.io`
-  - If the consent screen is in Testing, add your account email under **Test users** so you can authorize the Drive scopes.
-2. Copy the client ID string and paste it into `src/config.ts` (`GOOGLE_CLIENT_ID`).
-3. Reload the app. The Drive controls stay disabled until the client ID is set.
+## Run Locally
+```bash
+npm run dev
+```
 
-Drive backups work with scope `https://www.googleapis.com/auth/drive.file`, the folder `PsA-Logbook`, and the file `psa-logbook-data.json`. Tokens are kept only in memory (module state), and imports merge events by `id` choosing the record with the newest `updatedAt`.
+## Build
+```bash
+npm run lint
+npm run typecheck
+npm run build
+```
 
-## GitHub Pages deployment
+## Using the App
+1. Open the app and go to Settings.
+2. Use the Setup Wizard:
+   - Step 1: Sign in with Google.
+   - Step 2: Create new shared files (pick a folder) or select existing `household.json` and `our-health-log.json`.
+3. Add episodes, temperature entries, and medications. Changes save directly to Drive.
 
-  - Repository name: `psa-logbook` (see `vite.config.ts` `base` and `.github/workflows/deploy.yml`).
-- Vite calculates `pagesBase = process.env.VITE_BASE ?? '/psa-tracker/'`. To change the base path (e.g., if you rename the repository), rebuild with `VITE_BASE=/your-new-repo/` so assets load from the right folder.
-  - Push to `main`; the workflow runs `npm ci`, `npm run build` (with `VITE_BASE=/psa-logbook/`), and uses `peaceiris/actions-gh-pages` to publish `dist/` into the `gh-pages` branch.
-  - In GitHub repo **Settings > Pages**, confirm the source is `gh-pages` branch with the root directory, and that GitHub Actions is enabled to deploy. The live URL will be `https://<your-github-username>.github.io/psa-logbook/`.
+## Merge Behavior
+On save, the app writes with `If-Match` (ETag). If another device has updated the file, the app:
+1. Loads the latest file.
+2. Merges by ID (union for episodes, temps, meds, and medCatalog).
+3. Retries the save once.
 
-## PWA & iPhone experience
+## GitHub Pages checklist
+The GitHub Actions workflow in `.github/workflows/deploy.yml` builds and deploys to `./dist`. The workflow injects `VITE_BASE=/<repository-name>/` so the app and manifest honor the repo-specific base path.
 
-- Open the site in Safari, tap the **Share** button, then **Add to Home Screen**. The viewport is optimized for mobile and caches assets via a service worker (`vite-plugin-pwa`).
-- The manifest (`PsA Logbook`) and icons (`public/icon-192.png`, `public/icon-512.png`) are configured for install prompts.
+1. Enable Pages in the repo settings and select “GitHub Actions” as the source.
+2. Add the secrets `VITE_GOOGLE_CLIENT_ID`, `VITE_GOOGLE_API_KEY`, and (optional) `VITE_GOOGLE_APP_ID`.
+3. In Settings → Pages, confirm “Source: GitHub Actions”.
+4. In the Actions tab, run the **Deploy Our Health** workflow when ready and visit `https://<owner>.github.io/<repo>/` after the Pages job completes.
+3. Push to `main` or trigger the workflow manually, then visit `https://<owner>.github.io/<repo>/` once the deploy picks up.
 
-## Backup & restore notes
-
-- **Local-first:** logging, filters, and recap are usable offline. Drive is optional and disabled until you configure Google.
-- **Backup flow:** `Connect Google Drive` prompts for consent, then `Backup now` exports all events to the Drive file via a multipart PATCH request. `Restore from Drive` downloads that JSON and merges it by `id`, keeping whichever record has the newest `updatedAt`. The timeframe selector uses approximate days (year = 365, six months = 183, month = 30, week = 7) when slicing the dataset before export.
-- **JSON export/import:** Use the `Export JSON` button to download a copy. Use the `Import JSON` input to merge a saved file by the same rules.
-- **Excel export:** `Export Excel` creates a styled `.xlsx` workbook (sheet “PsA Logbook”) whose headers read `Start date`, `End date`, `Region`, `Joint`, `Detail 1`, `Detail 2`, `Side`, `Symptom`, `Pain (0-10)`, `Stiffness (min)`, `Swelling (0-3)`, `Trigger`, `Action taken`, and `Notes`. Dates use `DD-MMM-YY` (e.g., `05-Feb-26`), the timeframe filters plus region/joint filters control the rows, and the downloaded file name follows `psa-logbook-<timeframe>-<YYYYMMDD>.xlsx`.
-- **Drive visibility:** The folder `PsA-Logbook` and file `psa-logbook-data.json` remain visible within your Google Drive. There is no hidden storage. Imports/restore merges follow the same "latest updatedAt wins" rule.
-- **Side selection:** The log form’s Left/Right tickboxes map to `left`, `right`, `both`, or `''` (none), though the selectors hide automatically when you pick a midline region (like spine/neck) or a joint that already encodes laterality (e.g., left/right knee). The stored value is still exported with the rest of the metadata.
-
-## Testing / smoke checks
-
-- `npm install`
-  ```
-  up to date, audited 385 packages in 3s
-
-  107 packages are looking for funding
-    run `npm fund` for details
-
-  found 0 vulnerabilities
-  ```
-- `npm run typecheck`
-  ```
-  > psa-logbook@0.0.0 typecheck
-  > tsc --noEmit
-  ```
-- `npm run build`
-  ```
-  > psa-logbook@0.0.0 build
-  > tsc && vite build
-
-  vite v7.3.1 building client environment for production...
-  ✓ 58 modules transformed.
-  rendering chunks...
-  computing gzip size...
-  dist/registerSW.js              0.16 kB
-  dist/manifest.webmanifest       0.32 kB
-  dist/index.html                 0.92 kB │ gzip:  0.49 kB
-  dist/assets/index-Bp3-CLrW.css  3.53 kB │ gzip:  1.31 kB
-  dist/assets/index-1Kk36X3D.js   311.57 kB │ gzip: 99.68 kB
-  ✓ built in 2.22s
-
-  PWA v1.2.0
-  mode      generateSW
-  precache  10 entries (316.06 KiB)
-  files generated
-    dist/sw.js
-    dist/workbox-8c29f6e4.js
-  ```
-- `npm run dev -- --host 0.0.0.0 --port 4173`
-  ```
-  command timed out after 14021 milliseconds
-  ```
-  (Started Vite dev server, confirmed it booted, then cancelled after a brief smoke check.)
+## Google Cloud checklist
+1. Configure a Web OAuth client ID with authorized JavaScript origins that include both `https://<owner>.github.io/<repo>/` and `http://localhost:5173`.
+2. Add your Google account as a test user if the project is not public/verified.
+3. Restrict the API key (used for Picker) to the same origins and enable the Google Drive API.
+4. Store the OAuth client ID and API key in `.env.local` (or GitHub secrets) under `VITE_GOOGLE_CLIENT_ID` and `VITE_GOOGLE_API_KEY`.
+## Notes
+- The repository only contains placeholder data. Replace with your own copies stored in Drive.
+- The app is client-only; no server storage is used.

@@ -1,0 +1,23 @@
+﻿{
+  "schemaVersion": 1,
+  "lastUpdatedAtISO": "2026-01-01T00:00:00.000Z",
+  "episodes": [],
+  "temps": [],
+  "meds": [],
+  "medCatalog": [
+    {
+      "id": "med-1",
+      "name": "Acetaminophen",
+      "isFavorite": true,
+      "createdAtISO": "2026-01-01T00:00:00.000Z",
+      "updatedAtISO": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "med-2",
+      "name": "Ibuprofen",
+      "isFavorite": false,
+      "createdAtISO": "2026-01-01T00:00:00.000Z",
+      "updatedAtISO": "2026-01-01T00:00:00.000Z"
+    }
+  ]
+}

@@ -1,974 +1,1069 @@
+﻿
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { FormEvent } from 'react';
-import {
-  createEvent,
-  deleteEvent,
-  exportEventsAsJson,
-  exportEventsAsXlsx,
-  listEvents,
-  updateEvent,
-  type EventRecord,
-  type EventFormValues
-} from './lib/events';
-import { getMeta, setMeta } from './lib/db';
-import {
-  ACTION_OPTIONS,
-  drilldownsFor,
-  hasOtherSelected,
-  jointsForRegion,
-  labelForKey,
-  OTHER_KEY,
-  REGION_OPTIONS,
-  SYMPTOM_OPTIONS,
-  TIMEFRAME_OPTIONS,
-  TRIGGER_OPTIONS,
-  sideModeForSelection
-} from './lib/lookups';
-import type { DrillLevel, TimeframeKey } from './lib/lookups';
-import {
-  backupToDrive,
-  connectDrive,
-  getDriveStatus,
-  isDriveAvailable,
-  restoreFromDrive,
-  type DriveStatus
-} from './lib/drive';
 import './index.css';
+import {
+  createId,
+  emptyHousehold,
+  emptyLog,
+  mergeById,
+  nowISO,
+  type Episode,
+  type Household,
+  type LogData,
+  type MedCatalogItem,
+  type MedEntry,
+  type Member,
+  type TempEntry
+} from './lib/models';
+import {
+  connectDrive,
+  createDriveJsonFile,
+  isDriveConfigured,
+  pickDriveFile,
+  pickDriveFolder,
+  type PickedDriveFile
+} from './lib/drive';
+import {
+  getStoredHouseholdFileId,
+  getStoredLogFileId,
+  loadHouseholdFromDrive,
+  loadLogFromDrive,
+  saveHouseholdToDrive,
+  saveLogToDrive,
+  setStoredHouseholdFileId,
+  setStoredLogFileId,
+  type DriveFileState
+} from './lib/storage';
 
-type ThemeSetting = 'light' | 'dark' | 'system';
+const formatDateTime = (iso?: string | null) => (iso ? new Date(iso).toLocaleString() : '');
+const formatDate = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString() : '');
 
-const THEME_KEY = 'theme';
-
-type LogFormState = {
-  startAt: string;
-  endAt: string;
-  pain: number;
-  regionLabel: string;
-  regionKey: string;
-  jointKey: string;
-  symptomKey: string;
-  symptomCustom: string;
-  triggerKey: string;
-  triggerCustom: string;
-  actionKey: string;
-  actionCustom: string;
-  sideLeft: boolean;
-  sideRight: boolean;
-  drill1Key: string;
-  drill1Custom: string;
-  drill2Key: string;
-  drill2Custom: string;
-  notes: string;
-};
-
-type EventFilters = {
-  days: number;
-  regionKey?: string;
-  jointKey?: string;
-  minPain: number;
-};
-
-const DEFAULT_FORM: LogFormState = {
-  startAt: '',
-  endAt: '',
-  pain: 5,
-  regionLabel: '',
-  regionKey: '',
-  jointKey: '',
-  symptomKey: SYMPTOM_OPTIONS[0].key,
-  symptomCustom: '',
-  triggerKey: '',
-  triggerCustom: '',
-  actionKey: '',
-  actionCustom: '',
-  sideLeft: false,
-  sideRight: false,
-  drill1Key: '',
-  drill1Custom: '',
-  drill2Key: '',
-  drill2Custom: '',
-  notes: ''
-};
-
-const toLocalInput = (value?: number) => {
-  if (!value) {
-    return new Date().toISOString().slice(0, 16);
-  }
-  return new Date(value).toISOString().slice(0, 16);
-};
-
-const initialForm = (regionKey = '', regionLabel = ''): LogFormState => ({
-  ...DEFAULT_FORM,
-  startAt: toLocalInput(),
-  regionKey,
-  regionLabel: regionLabel || (regionKey ? labelForKey(REGION_OPTIONS, regionKey) : '')
-});
-
-const toTimestamp = (value: string) => (value ? new Date(value).getTime() : Date.now());
-
-function useEvents(filters: EventFilters) {
-  const [events, setEvents] = useState<EventRecord[]>([]);
-
-  const load = useCallback(async () => {
-    const data = await listEvents(filters);
-    setEvents(data);
-  }, [filters]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  return { events, reload: load };
-}
-
-const deriveSide = (left: boolean, right: boolean): '' | 'left' | 'right' | 'both' => {
-  if (left && right) return 'both';
-  if (left) return 'left';
-  if (right) return 'right';
-  return '';
-};
-
-const sideLabel = (side: '' | 'left' | 'right' | 'both'): string => {
-  switch (side) {
-    case 'left':
-      return 'Left';
-    case 'right':
-      return 'Right';
-    case 'both':
-      return 'Left & Right';
-  default:
-    return 'None';
-  }
-};
-
-const formatDate = (value?: number) => (value ? new Date(value).toLocaleString() : '—');
-
-const downloadTextFile = (filename: string, content: string, mime: string) => {
-  const blob = new Blob([content], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-};
-
-const downloadBlob = (filename: string, blob: Blob) => {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-};
-
-const formatFilenameDate = (date = new Date()) => {
+const toLocalDateInput = (iso?: string | null) => {
+  if (!iso) return '';
+  const date = new Date(iso);
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
-  return `${year}${month}${day}`;
+  return `${year}-${month}-${day}`;
 };
 
-const drillLabelForEvent = (event: EventRecord, level: DrillLevel): string | null => {
-  const key = level.field === 'drill1' ? event.drill1Key : event.drill2Key;
-  const custom = level.field === 'drill1' ? event.drill1Custom : event.drill2Custom;
-  if (!key) return null;
-  if (key === OTHER_KEY) {
-    if (custom && custom.trim()) {
-      return custom.trim();
+const toISOFromDate = (value: string) => {
+  if (!value) return nowISO();
+  const date = new Date(`${value}T00:00:00`);
+  return date.toISOString();
+};
+
+const toLocalTimeInput = (iso?: string | null) => {
+  if (!iso) return '';
+  const date = new Date(iso);
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
+};
+
+const toISOFromTime = (value: string) => {
+  const now = new Date();
+  if (!value) return now.toISOString();
+  const [hours, minutes] = value.split(':').map((item) => Number(item));
+  const date = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours || 0, minutes || 0, 0);
+  return date.toISOString();
+};
+
+const routeFromHash = () => {
+  const hash = window.location.hash.replace('#', '');
+  if (!hash || hash === 'home') return { page: 'home' } as const;
+  if (hash.startsWith('person=')) return { page: 'person', memberId: hash.replace('person=', '') } as const;
+  if (hash.startsWith('episode=')) return { page: 'episode', episodeId: hash.replace('episode=', '') } as const;
+  if (hash === 'settings') return { page: 'settings' } as const;
+  return { page: 'home' } as const;
+};
+
+type Route = ReturnType<typeof routeFromHash>;
+
+type DriveState = {
+  connected: boolean;
+  busy: boolean;
+  message: string | null;
+};
+
+const TemperatureChart = ({ entries }: { entries: TempEntry[] }) => {
+  if (entries.length === 0) {
+    return <div className="chart-empty">No temperature entries yet.</div>;
+  }
+  const width = 520;
+  const height = 180;
+  const padding = 28;
+  const values = entries.map((entry) => entry.tempC);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = min === max ? 1 : max - min;
+  const xStep = entries.length > 1 ? (width - padding * 2) / (entries.length - 1) : 0;
+  const points = entries.map((entry, index) => {
+    const x = padding + index * xStep;
+    const y = padding + ((max - entry.tempC) / span) * (height - padding * 2);
+    return { x, y, entry };
+  });
+  const linePath = points
+    .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`)
+    .join(' ');
+
+  return (
+    <svg className="temp-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Temperature chart">
+      <defs>
+        <linearGradient id="tempLine" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor="#7C9F91" />
+          <stop offset="100%" stopColor="#D37B52" />
+        </linearGradient>
+      </defs>
+      <rect x="0" y="0" width={width} height={height} rx="16" className="chart-bg" />
+      <path d={linePath} fill="none" stroke="url(#tempLine)" strokeWidth="3" />
+      {points.map((point) => (
+        <circle key={point.entry.id} cx={point.x} cy={point.y} r="5" className="chart-point" />
+      ))}
+      <text x={padding} y={padding - 8} className="chart-label">
+        {min.toFixed(1)} C
+      </text>
+      <text x={padding} y={height - 6} className="chart-label">
+        {max.toFixed(1)} C
+      </text>
+    </svg>
+  );
+};
+
+type EpisodeViewProps = {
+  episode: Episode;
+  member?: Member;
+  temps: TempEntry[];
+  meds: MedEntry[];
+  catalog: MedCatalogItem[];
+  onUpdateEpisode: (episodeId: string, updates: Partial<Episode>) => Promise<void>;
+  onAddTemp: (episodeId: string, tempC: number, atISO: string, note: string) => Promise<void>;
+  onAddMed: (episodeId: string, catalogItem: MedCatalogItem, doseText: string, atISO: string, route: string, note: string) => Promise<void>;
+  onUpsertCatalog: (name: string) => Promise<MedCatalogItem | null>;
+  onToggleFavorite: (itemId: string) => Promise<void>;
+  onNavigate: (hash: string) => void;
+};
+
+const EpisodeView = ({
+  episode,
+  member,
+  temps,
+  meds,
+  catalog,
+  onUpdateEpisode,
+  onAddTemp,
+  onAddMed,
+  onUpsertCatalog,
+  onToggleFavorite,
+  onNavigate
+}: EpisodeViewProps) => {
+  const episodeTemps = useMemo(
+    () => temps.slice().sort((a, b) => new Date(a.atISO).getTime() - new Date(b.atISO).getTime()),
+    [temps]
+  );
+  const episodeMeds = useMemo(
+    () => meds.slice().sort((a, b) => new Date(b.atISO).getTime() - new Date(a.atISO).getTime()),
+    [meds]
+  );
+
+  const [category, setCategory] = useState(episode.category);
+  const [symptomsText, setSymptomsText] = useState(episode.symptoms.join(', '));
+  const [severity, setSeverity] = useState(String(episode.severity));
+  const [notes, setNotes] = useState(episode.notes);
+  const [startDate, setStartDate] = useState(toLocalDateInput(episode.startedAtISO));
+  const [tempValue, setTempValue] = useState('');
+  const [tempTime, setTempTime] = useState(toLocalTimeInput(nowISO()));
+  const [tempNote, setTempNote] = useState('');
+  const [medName, setMedName] = useState('');
+  const [medDose, setMedDose] = useState('');
+  const [medRoute, setMedRoute] = useState('');
+  const [medTime, setMedTime] = useState(toLocalTimeInput(nowISO()));
+  const [medNote, setMedNote] = useState('');
+  const [selectedMedId, setSelectedMedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setCategory(episode.category);
+    setSymptomsText(episode.symptoms.join(', '));
+    setSeverity(String(episode.severity));
+    setNotes(episode.notes);
+    setStartDate(toLocalDateInput(episode.startedAtISO));
+  }, [episode.category, episode.symptoms, episode.severity, episode.notes, episode.startedAtISO]);
+
+  const recentCatalog = useMemo(() => {
+    const seen = new Set<string>();
+    const recent = episodeMeds
+      .map((entry) => catalog.find((item) => item.id === entry.medId))
+      .filter((item): item is MedCatalogItem => Boolean(item))
+      .filter((item) => {
+        if (seen.has(item.id)) return false;
+        seen.add(item.id);
+        return true;
+      });
+    return recent.slice(0, 4);
+  }, [episodeMeds, catalog]);
+
+  const favoriteCatalog = useMemo(
+    () => catalog.filter((item) => item.isFavorite).slice(0, 6),
+    [catalog]
+  );
+
+  const suggestions = useMemo(() => {
+    const query = medName.trim().toLowerCase();
+    if (!query) return catalog.slice(0, 6);
+    return catalog.filter((item) => item.name.toLowerCase().includes(query)).slice(0, 6);
+  }, [medName, catalog]);
+
+  const handleEpisodeSave = async () => {
+    await onUpdateEpisode(episode.id, {
+      category: category.trim() || 'Illness',
+      symptoms: symptomsText
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean),
+      severity: Math.min(5, Math.max(1, Number(severity) || 3)),
+      notes,
+      startedAtISO: toISOFromDate(startDate)
+    });
+  };
+
+  const handleTempSubmit = async () => {
+    const parsed = Number(tempValue);
+    if (!Number.isFinite(parsed)) return;
+    const iso = toISOFromTime(tempTime);
+    await onAddTemp(episode.id, parsed, iso, tempNote.trim());
+    setTempValue('');
+    setTempNote('');
+  };
+
+  const handleMedSubmit = async () => {
+    const iso = toISOFromTime(medTime);
+    let catalogItem: MedCatalogItem | null = null;
+    if (selectedMedId) {
+      catalogItem = catalog.find((item) => item.id === selectedMedId) ?? null;
     }
-    const otherOption = level.options.find((option) => option.key === OTHER_KEY);
-    return otherOption?.label ?? 'Other';
-  }
-  const option = level.options.find((entry) => entry.key === key);
-  return option ? option.label : key;
+    if (!catalogItem) {
+      catalogItem = await onUpsertCatalog(medName);
+    }
+    if (!catalogItem) return;
+    await onAddMed(episode.id, catalogItem, medDose.trim(), iso, medRoute.trim(), medNote.trim());
+    setMedName('');
+    setMedDose('');
+    setMedRoute('');
+    setMedNote('');
+    setSelectedMedId(null);
+  };
+
+  return (
+    <section className="panel">
+      <div className="panel-header">
+        <div>
+          <h2>{member?.name ?? 'Episode'}</h2>
+          <p>
+            Started {formatDate(episode.startedAtISO)}
+            {episode.endedAtISO ? ` · Closed ${formatDate(episode.endedAtISO)}` : ' · Ongoing'}
+          </p>
+        </div>
+        <div className="panel-actions">
+          <button type="button" className="ghost" onClick={() => onNavigate(`#person=${episode.memberId}`)}>
+            Back
+          </button>
+          <button
+            type="button"
+            className="primary"
+            onClick={() =>
+              onUpdateEpisode(episode.id, {
+                endedAtISO: episode.endedAtISO ? null : nowISO()
+              })
+            }
+          >
+            {episode.endedAtISO ? 'Reopen episode' : 'Close episode'}
+          </button>
+        </div>
+      </div>
+
+      <div className="section">
+        <h3>Episode details</h3>
+        <div className="form-grid">
+          <label>
+            Category
+            <input value={category} onChange={(event) => setCategory(event.target.value)} />
+          </label>
+          <label>
+            Severity (1-5)
+            <select value={severity} onChange={(event) => setSeverity(event.target.value)}>
+              {[1, 2, 3, 4, 5].map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Symptoms
+            <input
+              value={symptomsText}
+              onChange={(event) => setSymptomsText(event.target.value)}
+              placeholder="Fever, cough"
+            />
+          </label>
+          <label>
+            Start date
+            <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+          </label>
+          <label className="full">
+            Notes
+            <textarea rows={3} value={notes} onChange={(event) => setNotes(event.target.value)} />
+          </label>
+        </div>
+        <button type="button" className="ghost" onClick={handleEpisodeSave}>
+          Save details
+        </button>
+      </div>
+
+      <div className="section">
+        <div className="section-header">
+          <h3>Temperature log</h3>
+          <p>Track fevers and recovery.</p>
+        </div>
+        <div className="form-grid">
+          <label>
+            Temp (C)
+            <input
+              type="number"
+              step="0.1"
+              value={tempValue}
+              onChange={(event) => setTempValue(event.target.value)}
+              placeholder="37.5"
+            />
+          </label>
+          <label>
+            Time
+            <input type="time" value={tempTime} onChange={(event) => setTempTime(event.target.value)} />
+          </label>
+          <label>
+            Note
+            <input value={tempNote} onChange={(event) => setTempNote(event.target.value)} placeholder="Optional" />
+          </label>
+          <button type="button" className="primary" onClick={handleTempSubmit}>
+            Add temperature
+          </button>
+        </div>
+        <TemperatureChart entries={episodeTemps} />
+        <div className="log-list">
+          {episodeTemps.map((entry) => (
+            <div key={entry.id} className="log-row">
+              <div>{formatDateTime(entry.atISO)}</div>
+              <div>
+                {entry.tempC.toFixed(1)} C {entry.note ? `· ${entry.note}` : ''}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="section">
+        <div className="section-header">
+          <h3>Medication log</h3>
+          <p>Use type-ahead or pick from favorites and recent meds.</p>
+        </div>
+        <div className="chip-row">
+          {favoriteCatalog.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={`chip ${selectedMedId === item.id ? 'active' : ''}`}
+              onClick={() => {
+                setSelectedMedId(item.id);
+                setMedName(item.name);
+              }}
+            >
+              {item.name}
+            </button>
+          ))}
+          {favoriteCatalog.length === 0 && <span className="chip hint">No favorites yet.</span>}
+        </div>
+        <div className="chip-row">
+          {recentCatalog.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={`chip ${selectedMedId === item.id ? 'active' : ''}`}
+              onClick={() => {
+                setSelectedMedId(item.id);
+                setMedName(item.name);
+              }}
+            >
+              {item.name}
+            </button>
+          ))}
+          {recentCatalog.length === 0 && <span className="chip hint">No recent meds yet.</span>}
+        </div>
+        <div className="form-grid">
+          <label>
+            Medication
+            <input
+              value={medName}
+              onChange={(event) => {
+                setMedName(event.target.value);
+                setSelectedMedId(null);
+              }}
+              placeholder="Acetaminophen"
+            />
+          </label>
+          <label>
+            Dose
+            <input value={medDose} onChange={(event) => setMedDose(event.target.value)} placeholder="500 mg" />
+          </label>
+          <label>
+            Route
+            <input value={medRoute} onChange={(event) => setMedRoute(event.target.value)} placeholder="Oral" />
+          </label>
+          <label>
+            Time
+            <input type="time" value={medTime} onChange={(event) => setMedTime(event.target.value)} />
+          </label>
+          <label className="full">
+            Note
+            <input value={medNote} onChange={(event) => setMedNote(event.target.value)} placeholder="Optional" />
+          </label>
+          <button type="button" className="primary" onClick={handleMedSubmit}>
+            Add medication
+          </button>
+          </div>
+        <div className="suggestions">
+          {suggestions.map((item) => (
+            <div key={item.id} className="suggestion-row">
+              <button
+                type="button"
+                className={`chip ${selectedMedId === item.id ? 'active' : ''}`}
+                onClick={() => {
+                  setSelectedMedId(item.id);
+                  setMedName(item.name);
+                }}
+              >
+                {item.name}
+              </button>
+              <button type="button" className="ghost" onClick={() => onToggleFavorite(item.id)}>
+                {item.isFavorite ? 'Unfavorite' : 'Favorite'}
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="log-list">
+          {episodeMeds.map((entry) => (
+            <div key={entry.id} className="log-row">
+              <div>{formatDateTime(entry.atISO)}</div>
+              <div>
+                {entry.medName} {entry.doseText && `· ${entry.doseText}`} {entry.route && `· ${entry.route}`} {entry.note && `· ${entry.note}`}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+};
+type SettingsViewProps = {
+  members: Member[];
+  householdFileName?: string;
+  logFileName?: string;
+  drive: DriveState;
+  lastSyncISO?: string | null;
+  onConnect: () => Promise<void>;
+  onPickFile: (kind: 'household' | 'log') => Promise<void>;
+  onPickFolderAndCreate: () => Promise<void>;
+  onSaveMembers: (nextMembers: Member[]) => Promise<void>;
+  onNavigate: (hash: string) => void;
+  hasFiles: boolean;
 };
 
-const jointHelperText = (regionKey: string, jointKey: string): string | null => {
-  if (regionKey === 'hands' && jointKey === 'fingers') {
-    return 'MCP = knuckle at the base · PIP = middle joint · DIP = joint closest to the fingertip · IP = thumb joint · CMC = thumb base near the wrist';
-  }
-  if (regionKey === 'feet' && jointKey === 'toes') {
-    return 'MCP = knuckle at the base · PIP = middle joint · DIP = joint closest to the toe tip · IP = big toe joint · MTP = toe knuckle at the base';
-  }
-  return null;
+const SettingsView = ({
+  members,
+  householdFileName,
+  logFileName,
+  drive,
+  lastSyncISO,
+  onConnect,
+  onPickFile,
+  onPickFolderAndCreate,
+  onSaveMembers,
+  onNavigate,
+  hasFiles
+}: SettingsViewProps) => {
+  const [draft, setDraft] = useState<Member[]>(members);
+  const [setupStep, setSetupStep] = useState<'signin' | 'choose'>('signin');
+
+  useEffect(() => {
+    setDraft(members);
+  }, [members]);
+
+  useEffect(() => {
+    if (drive.connected) {
+      setSetupStep('choose');
+    } else {
+      setSetupStep('signin');
+    }
+  }, [drive.connected]);
+
+  const updateDraft = (index: number, changes: Partial<Member>) => {
+    setDraft((prev) =>
+      prev.map((member, memberIndex) => (memberIndex === index ? { ...member, ...changes } : member))
+    );
+  };
+
+  return (
+    <section className="panel">
+      <div className="panel-header">
+        <div>
+          <h2>Settings</h2>
+          <p>Connect Google Drive and update household details.</p>
+        </div>
+        <button type="button" className="ghost" onClick={() => onNavigate('#home')}>
+          Back
+        </button>
+      </div>
+
+      {!hasFiles && (
+        <div className="wizard">
+          <h3>Setup Wizard</h3>
+          <p>Use the same Drive files on multiple phones to keep data in sync.</p>
+          <div className="wizard-step">
+            <div className="step-label">Step 1</div>
+            <div>
+              <strong>Sign in with Google</strong>
+              <p>Authorize Drive access (drive.file scope only).</p>
+            </div>
+            <button type="button" className="primary" onClick={onConnect} disabled={drive.busy || !isDriveConfigured()}>
+              {drive.connected ? 'Signed in' : 'Sign in with Google'}
+            </button>
+          </div>
+          <div className={`wizard-step ${setupStep === 'choose' ? '' : 'disabled'}`}>
+            <div className="step-label">Step 2</div>
+            <div>
+              <strong>Choose data files</strong>
+              <p>Create new shared files or pick existing ones.</p>
+            </div>
+            <div className="wizard-actions">
+              <button type="button" onClick={onPickFolderAndCreate} disabled={!drive.connected || drive.busy}>
+                Create new shared data files
+              </button>
+              <button type="button" onClick={() => onPickFile('household')} disabled={!drive.connected || drive.busy}>
+                Pick existing household.json
+              </button>
+              <button type="button" onClick={() => onPickFile('log')} disabled={!drive.connected || drive.busy}>
+                Pick existing our-health-log.json
+              </button>
+            </div>
+          </div>
+          {!isDriveConfigured() && (
+            <p className="message">Configure VITE_GOOGLE_CLIENT_ID and VITE_GOOGLE_API_KEY in .env.local first.</p>
+          )}
+          {drive.message && <p className="message">{drive.message}</p>}
+        </div>
+      )}
+
+      <div className="settings-grid">
+        <div className="settings-card">
+          <h3>Drive Status</h3>
+          <p>Drive file access is limited to selected files.</p>
+          <div className="status-row">
+            <span>Account</span>
+            <strong>{drive.connected ? 'Connected (drive.file scope)' : 'Not connected'}</strong>
+          </div>
+          <div className="status-row">
+            <span>Household file</span>
+            <strong>{householdFileName ?? 'Not selected'}</strong>
+          </div>
+          <div className="status-row">
+            <span>Log file</span>
+            <strong>{logFileName ?? 'Not selected'}</strong>
+          </div>
+          <div className="status-row">
+            <span>Last sync</span>
+            <strong>{lastSyncISO ? formatDateTime(lastSyncISO) : 'Not yet'}</strong>
+          </div>
+          <button type="button" className="primary" onClick={onConnect} disabled={drive.busy}>
+            {drive.connected ? 'Reconnect Drive' : 'Connect Drive'}
+          </button>
+          <button type="button" onClick={() => onPickFile('household')} disabled={drive.busy || !drive.connected}>
+            Re-pick household.json
+          </button>
+          <button type="button" onClick={() => onPickFile('log')} disabled={drive.busy || !drive.connected}>
+            Re-pick our-health-log.json
+          </button>
+        </div>
+        <div className="settings-card">
+          <h3>Household</h3>
+          <p>Update member names and accent colors.</p>
+          <div className="form-grid">
+            {draft.map((member, index) => (
+              <div key={member.id} className="member-row">
+                <input
+                  value={member.name}
+                  onChange={(event) => updateDraft(index, { name: event.target.value })}
+                />
+                <input
+                  type="color"
+                  value={member.accentColor}
+                  onChange={(event) => updateDraft(index, { accentColor: event.target.value })}
+                />
+              </div>
+            ))}
+          </div>
+          <button type="button" className="primary" onClick={() => onSaveMembers(draft)}>
+            Save household
+          </button>
+        </div>
+      </div>
+    </section>
+  );
 };
 
 export default function App() {
-  const [themeSetting, setThemeSetting] = useState<ThemeSetting>(() => {
-    const stored = localStorage.getItem(THEME_KEY);
-    if (stored === 'light' || stored === 'dark' || stored === 'system') {
-      return stored;
-    }
-    return 'system';
-  });
-  const [rememberedRegionKey, setRememberedRegionKey] = useState('');
-  const [form, setForm] = useState<LogFormState>(initialForm());
-  const [formMessage, setFormMessage] = useState<string | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [filters, setFilters] = useState<EventFilters>({ days: 7, regionKey: undefined, jointKey: undefined, minPain: 0 });
-  const { events, reload } = useEvents(filters);
-  const [driveStatus, setDriveStatus] = useState<DriveStatus>({
-    configured: isDriveAvailable(),
-    connected: false
-  });
-  const [driveMessage, setDriveMessage] = useState<string | null>(null);
-  const [isDriveBusy, setDriveBusy] = useState(false);
-  const [backupTimeframe, setBackupTimeframe] = useState<TimeframeKey>('all');
-  const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
+  const [route, setRoute] = useState<Route>(() => routeFromHash());
+  const [drive, setDrive] = useState<DriveState>({ connected: false, busy: false, message: null });
+  const [householdState, setHouseholdState] = useState<DriveFileState<Household> | null>(null);
+  const [logState, setLogState] = useState<DriveFileState<LogData> | null>(null);
+  const [localMessage, setLocalMessage] = useState<string | null>(null);
+  const [lastSyncISO, setLastSyncISO] = useState<string | null>(null);
 
-  const applyThemeSetting = useCallback((setting: ThemeSetting) => {
-    localStorage.setItem(THEME_KEY, setting);
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const resolved = setting === 'system' ? (prefersDark ? 'dark' : 'light') : setting;
-    document.documentElement.dataset.theme = resolved;
-    const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) {
-      const color = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
-      if (color) meta.setAttribute('content', color);
+  useEffect(() => {
+    const onHashChange = () => setRoute(routeFromHash());
+    window.addEventListener('hashchange', onHashChange);
+    if (!window.location.hash) {
+      window.location.hash = '#home';
+    }
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  const setBusy = (busy: boolean) => setDrive((prev) => ({ ...prev, busy }));
+  const setDriveMessage = (message: string | null) => setDrive((prev) => ({ ...prev, message }));
+
+  const loadStoredFiles = useCallback(async () => {
+    const householdFileId = getStoredHouseholdFileId();
+    const logFileId = getStoredLogFileId();
+    if (householdFileId) {
+      const household = await loadHouseholdFromDrive(householdFileId);
+      setHouseholdState(household);
+    }
+    if (logFileId) {
+      const log = await loadLogFromDrive(logFileId);
+      setLogState(log);
+    }
+    if (householdFileId || logFileId) {
+      setLastSyncISO(nowISO());
     }
   }, []);
 
-  useEffect(() => {
-    applyThemeSetting(themeSetting);
-  }, [themeSetting, applyThemeSetting]);
-
-  useEffect(() => {
-    getMeta('lastUsedRegionKey').then((saved) => {
-      if (saved) {
-        setRememberedRegionKey(saved);
-        setForm(initialForm(saved, labelForKey(REGION_OPTIONS, saved)));
-      }
-    });
-  }, []);
-
-  const jointOptions = useMemo(() => jointsForRegion(form.regionKey) ?? [], [form.regionKey]);
-  const filterJointOptions = useMemo(
-    () => jointsForRegion(filters.regionKey ?? '') ?? [],
-    [filters.regionKey]
-  );
-  const drillLevels = useMemo(
-    () => drilldownsFor(form.regionKey, form.jointKey),
-    [form.regionKey, form.jointKey]
-  );
-  const sideMode = sideModeForSelection(form.regionKey, form.jointKey);
-  const jointHelper = jointHelperText(form.regionKey, form.jointKey);
-  const getDrillKey = (field: 'drill1' | 'drill2') =>
-    field === 'drill1' ? form.drill1Key : form.drill2Key;
-  const getDrillCustom = (field: 'drill1' | 'drill2') =>
-    field === 'drill1' ? form.drill1Custom : form.drill2Custom;
-
-  const handleFormChange = <K extends keyof LogFormState>(field: K, value: LogFormState[K]) => {
-    setForm((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const handleRegionChange = (regionKey: string) => {
-    setForm((prev) => ({
-      ...prev,
-      regionKey,
-      regionLabel: regionKey ? labelForKey(REGION_OPTIONS, regionKey) : '',
-      jointKey: '',
-      sideLeft: prev.sideLeft,
-      sideRight: prev.sideRight,
-      drill1Key: '',
-      drill1Custom: '',
-      drill2Key: '',
-      drill2Custom: ''
-    }));
-  };
-
-  const handleJointChange = (jointKey: string) => {
-    setForm((prev) => ({
-      ...prev,
-      jointKey,
-      drill1Key: '',
-      drill1Custom: '',
-      drill2Key: '',
-      drill2Custom: ''
-    }));
-  };
-
-  const handleDrillChange = (field: 'drill1' | 'drill2', value: string) => {
-    setForm((prev) => {
-      const next = { ...prev };
-      if (field === 'drill1') {
-        next.drill1Key = value;
-        next.drill1Custom = '';
-        next.drill2Key = '';
-        next.drill2Custom = '';
-      } else {
-        next.drill2Key = value;
-        next.drill2Custom = '';
-      }
-      return next;
-    });
-  };
-
-  const handleDrillCustomChange = (field: 'drill1' | 'drill2', value: string) => {
-    setForm((prev) => {
-      if (field === 'drill1') {
-        return { ...prev, drill1Custom: value };
-      }
-      return { ...prev, drill2Custom: value };
-    });
-  };
-
-  const rememberedRegionLabel = rememberedRegionKey ? labelForKey(REGION_OPTIONS, rememberedRegionKey) : '';
-
-  useEffect(() => {
-    if (sideMode === 'hide') {
-      setForm((prev) => {
-        if (!prev.sideLeft && !prev.sideRight) {
-          return prev;
-        }
-        return { ...prev, sideLeft: false, sideRight: false };
-      });
-    }
-  }, [sideMode]);
-
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setFormMessage(null);
-    const payload: EventFormValues = {
-      startAt: toTimestamp(form.startAt),
-      endAt: form.endAt ? toTimestamp(form.endAt) : null,
-      pain: form.pain,
-      region: form.regionLabel || 'Unspecified region',
-      regionKey: form.regionKey || undefined,
-      jointKey: form.jointKey || undefined,
-      symptomKey: form.symptomKey,
-      symptomCustom: form.symptomCustom,
-      triggerKey: form.triggerKey,
-      triggerCustom: form.triggerCustom,
-      actionKey: form.actionKey,
-      actionCustom: form.actionCustom,
-      side: sideMode === 'show' ? deriveSide(form.sideLeft, form.sideRight) : '',
-      drill1Key: form.drill1Key || undefined,
-      drill1Custom: form.drill1Custom,
-      drill2Key: form.drill2Key || undefined,
-      drill2Custom: form.drill2Custom,
-      notes: form.notes
-    };
-
-    try {
-      if (editingId) {
-        await updateEvent(editingId, payload);
-        setFormMessage('Event updated.');
-        setEditingId(null);
-      } else {
-        await createEvent(payload);
-        setFormMessage('Event saved.');
-      }
-      if (payload.regionKey) {
-        await setMeta('lastUsedRegionKey', payload.regionKey);
-        setRememberedRegionKey(payload.regionKey);
-      }
-      setForm(initialForm(payload.regionKey ?? '', payload.region));
-      await reload();
-    } catch (err) {
-      setFormMessage((err as Error).message);
-    }
-  };
-
-  const handleEdit = async (eventRecord: EventRecord) => {
-    setEditingId(eventRecord.id);
-    setForm({
-      startAt: toLocalInput(eventRecord.startAt),
-      endAt: eventRecord.endAt ? toLocalInput(eventRecord.endAt) : '',
-      pain: eventRecord.pain,
-      regionLabel: eventRecord.region,
-      regionKey: eventRecord.regionKey ?? '',
-      jointKey: eventRecord.jointKey ?? '',
-      symptomKey: eventRecord.symptomKey ?? SYMPTOM_OPTIONS[0].key,
-      symptomCustom: eventRecord.symptomCustom ?? '',
-      triggerKey: eventRecord.triggerKey ?? TRIGGER_OPTIONS[0].key,
-      triggerCustom: eventRecord.triggerCustom ?? '',
-      actionKey: eventRecord.actionKey ?? ACTION_OPTIONS[0].key,
-      actionCustom: eventRecord.actionCustom ?? '',
-      sideLeft: eventRecord.side === 'left' || eventRecord.side === 'both',
-      sideRight: eventRecord.side === 'right' || eventRecord.side === 'both',
-      drill1Key: eventRecord.drill1Key ?? '',
-      drill1Custom: eventRecord.drill1Custom ?? '',
-      drill2Key: eventRecord.drill2Key ?? '',
-      drill2Custom: eventRecord.drill2Custom ?? '',
-      notes: eventRecord.notes
-    });
-    setFormMessage('Editing event. Submit to save.');
-  };
-
-  const handleDelete = async (eventRecord: EventRecord) => {
-    if (!window.confirm('Delete this entry?')) {
-      return;
-    }
-    await deleteEvent(eventRecord.id);
-    await reload();
-  };
-
-  const handleFiltersChange = (updates: Partial<EventFilters>) => {
-    setFilters((prev) => {
-      const merged = { ...prev, ...updates };
-      if (updates.regionKey) {
-        merged.jointKey = undefined;
-      }
-      return merged;
-    });
-  };
-
-  const groupedEvents = useMemo(() => {
-    const groups: Record<string, EventRecord[]> = {};
-    const order: string[] = [];
-    events.forEach((eventRecord) => {
-      const dateKey = new Date(eventRecord.startAt).toLocaleDateString();
-      if (!groups[dateKey]) {
-        groups[dateKey] = [];
-        order.push(dateKey);
-      }
-      groups[dateKey].push(eventRecord);
-    });
-    return order.map((dateKey) => ({
-      dateKey,
-      events: groups[dateKey]
-    }));
-  }, [events]);
-
-  const buildEventSummary = (eventRecord: EventRecord) => {
-    const regionLabel = eventRecord.regionKey
-      ? labelForKey(REGION_OPTIONS, eventRecord.regionKey)
-      : eventRecord.region;
-    const jointOptions = jointsForRegion(eventRecord.regionKey ?? '');
-    const jointLabel = eventRecord.jointKey
-      ? labelForKey(jointOptions ?? [], eventRecord.jointKey)
-      : 'Unspecified joint';
-    const drillLevelsForEvent = drilldownsFor(eventRecord.regionKey ?? '', eventRecord.jointKey ?? '');
-    const drillLabels = drillLevelsForEvent
-      .map((level) => drillLabelForEvent(eventRecord, level))
-      .filter((label): label is string => Boolean(label));
-    return [regionLabel || 'Unspecified region', jointLabel, ...drillLabels].join(' - ');
-  };
-
-  const baseTimeframeLabel = useMemo(() => {
-    if (filters.days === 7) return 'Last 7 days';
-    if (filters.days === 30) return 'Last 30 days';
-    return 'All time';
-  }, [filters.days]);
-
-  const handleExportJson = async () => {
-    const options = {
-      timeframe: backupTimeframe,
-      regionKey: filters.regionKey,
-      jointKey: filters.jointKey
-    };
-    const payload = await exportEventsAsJson(options);
-    downloadTextFile('psa-logbook-events.json', payload, 'application/json');
-  };
-
-  const handleExportExcel = async () => {
-    const options = {
-      timeframe: backupTimeframe,
-      regionKey: filters.regionKey,
-      jointKey: filters.jointKey
-    };
-    const blob = await exportEventsAsXlsx(options);
-    const filename = `psa-logbook-${backupTimeframe}-${formatFilenameDate()}.xlsx`;
-    downloadBlob(filename, blob);
-  };
-
-  const refreshDriveState = useCallback(async () => {
-    try {
-      const status = await getDriveStatus();
-      setDriveStatus(status);
-    } catch (err) {
-      console.error(err);
-    }
-  }, []);
-
-  useEffect(() => {
-    refreshDriveState();
-  }, [refreshDriveState]);
-
-  const handleDriveAction = async (action: 'connect' | 'backup' | 'restore') => {
-    setDriveBusy(true);
+  const handleConnect = async () => {
+    setBusy(true);
     setDriveMessage(null);
     try {
-      if (action === 'connect') {
-        await connectDrive();
-        setDriveMessage('Connected to Google Drive.');
-      } else if (action === 'backup') {
-        await backupToDrive();
-        setDriveMessage(`Backup saved at ${formatDate(Date.now())}.`);
-      } else {
-        const result = await restoreFromDrive();
-        setDriveMessage(`Restored ${result.imported} records at ${formatDate(Date.now())}.`);
-      }
+      await connectDrive();
+      setDrive((prev) => ({ ...prev, connected: true }));
+      await loadStoredFiles();
     } catch (err) {
       setDriveMessage((err as Error).message);
     } finally {
-      setDriveBusy(false);
-      await refreshDriveState();
-      await reload();
+      setBusy(false);
     }
   };
+
+  const handlePickFile = async (kind: 'household' | 'log') => {
+    setBusy(true);
+    setDriveMessage(null);
+    try {
+      if (!drive.connected) {
+        await connectDrive();
+        setDrive((prev) => ({ ...prev, connected: true }));
+      }
+      const picked: PickedDriveFile = await pickDriveFile(
+        kind === 'household' ? 'Select household.json' : 'Select our-health-log.json'
+      );
+      if (kind === 'household') {
+        setStoredHouseholdFileId(picked.id);
+        const household = await loadHouseholdFromDrive(picked.id);
+        setHouseholdState(household);
+      } else {
+        setStoredLogFileId(picked.id);
+        const log = await loadLogFromDrive(picked.id);
+        setLogState(log);
+      }
+      setLastSyncISO(nowISO());
+    } catch (err) {
+      setDriveMessage((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handlePickFolderAndCreate = async () => {
+    setBusy(true);
+    setDriveMessage(null);
+    try {
+      if (!drive.connected) {
+        await connectDrive();
+        setDrive((prev) => ({ ...prev, connected: true }));
+      }
+      const folder = await pickDriveFolder('Choose a folder for Our Health files');
+      const householdTemplate = emptyHousehold();
+      const logTemplate = emptyLog();
+      const householdResult = await createDriveJsonFile(folder.id, 'household.json', householdTemplate);
+      const logResult = await createDriveJsonFile(folder.id, 'our-health-log.json', logTemplate);
+      setStoredHouseholdFileId(householdResult.meta.id);
+      setStoredLogFileId(logResult.meta.id);
+      setHouseholdState({
+        fileId: householdResult.meta.id,
+        name: householdResult.meta.name,
+        etag: householdResult.meta.etag,
+        modifiedTime: householdResult.meta.modifiedTime,
+        data: householdTemplate
+      });
+      setLogState({
+        fileId: logResult.meta.id,
+        name: logResult.meta.name,
+        etag: logResult.meta.etag,
+        modifiedTime: logResult.meta.modifiedTime,
+        data: logTemplate
+      });
+      setLastSyncISO(nowISO());
+    } catch (err) {
+      setDriveMessage((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const updateHousehold = async (updater: (current: Household) => Household) => {
+    if (!householdState) return;
+    setBusy(true);
+    setLocalMessage(null);
+    try {
+      const next = updater({ ...householdState.data, lastUpdatedAtISO: nowISO() });
+      const result = await saveHouseholdToDrive(householdState, next);
+      setHouseholdState(result.state);
+      setLastSyncISO(nowISO());
+      if (result.merged) {
+        setLocalMessage('Household updated with a Drive merge. Review any changes.');
+      }
+    } catch (err) {
+      setLocalMessage((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const updateLog = async (updater: (current: LogData) => LogData) => {
+    if (!logState) return;
+    setBusy(true);
+    setLocalMessage(null);
+    try {
+      const next = updater({ ...logState.data, lastUpdatedAtISO: nowISO() });
+      const result = await saveLogToDrive(logState, next);
+      setLogState(result.state);
+      setLastSyncISO(nowISO());
+      if (result.merged) {
+        setLocalMessage('Log updated with a Drive merge. Review any changes.');
+      }
+    } catch (err) {
+      setLocalMessage((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const members = householdState?.data.members ?? emptyHousehold().members;
+  const episodes = logState?.data.episodes ?? emptyLog().episodes;
+  const temps = logState?.data.temps ?? emptyLog().temps;
+  const meds = logState?.data.meds ?? emptyLog().meds;
+  const catalog = logState?.data.medCatalog ?? emptyLog().medCatalog;
+
+  const memberMap = useMemo(() => new Map(members.map((member) => [member.id, member])), [members]);
+
+  const navigate = (hash: string) => {
+    window.location.hash = hash;
+  };
+
+  const createEpisode = async (member: Member) => {
+    if (!logState) return;
+    const now = nowISO();
+    const episode: Episode = {
+      id: createId(),
+      memberId: member.id,
+      category: 'Illness',
+      symptoms: [],
+      severity: 3,
+      notes: '',
+      startedAtISO: now,
+      endedAtISO: null,
+      createdAtISO: now,
+      updatedAtISO: now
+    };
+    await updateLog((current) => ({
+      ...current,
+      episodes: mergeById([episode], current.episodes)
+    }));
+    navigate(`#episode=${episode.id}`);
+  };
+
+  const updateEpisode = async (episodeId: string, updates: Partial<Episode>) => {
+    if (!logState) return;
+    const now = nowISO();
+    await updateLog((current) => {
+      const nextEpisodes = current.episodes.map((episode) =>
+        episode.id === episodeId
+          ? { ...episode, ...updates, updatedAtISO: now }
+          : episode
+      );
+      return { ...current, episodes: nextEpisodes };
+    });
+  };
+
+  const addTempEntry = async (episodeId: string, tempC: number, atISO: string, note: string) => {
+    if (!logState) return;
+    const now = nowISO();
+    const entry: TempEntry = {
+      id: createId(),
+      episodeId,
+      atISO,
+      tempC,
+      note,
+      createdAtISO: now,
+      updatedAtISO: now
+    };
+    await updateLog((current) => ({
+      ...current,
+      temps: mergeById([entry], current.temps)
+    }));
+  };
+
+  const addMedEntry = async (episodeId: string, catalogItem: MedCatalogItem, doseText: string, atISO: string, route: string, note: string) => {
+    if (!logState) return;
+    const now = nowISO();
+    const entry: MedEntry = {
+      id: createId(),
+      episodeId,
+      medId: catalogItem.id,
+      medName: catalogItem.name,
+      doseText,
+      route: route || undefined,
+      note,
+      atISO,
+      createdAtISO: now,
+      updatedAtISO: now
+    };
+    await updateLog((current) => ({
+      ...current,
+      meds: mergeById([entry], current.meds)
+    }));
+  };
+
+  const upsertCatalogItem = async (name: string): Promise<MedCatalogItem | null> => {
+    if (!logState) return null;
+    const trimmed = name.trim();
+    if (!trimmed) return null;
+    const existing = catalog.find((item) => item.name.toLowerCase() === trimmed.toLowerCase());
+    if (existing) return existing;
+    const now = nowISO();
+    const created: MedCatalogItem = {
+      id: createId(),
+      name: trimmed,
+      isFavorite: false,
+      createdAtISO: now,
+      updatedAtISO: now
+    };
+    await updateLog((current) => ({
+      ...current,
+      medCatalog: mergeById([created], current.medCatalog)
+    }));
+    return created;
+  };
+
+  const toggleFavorite = async (itemId: string) => {
+    if (!logState) return;
+    const now = nowISO();
+    await updateLog((current) => ({
+      ...current,
+      medCatalog: current.medCatalog.map((item) =>
+        item.id === itemId ? { ...item, isFavorite: !item.isFavorite, updatedAtISO: now } : item
+      )
+    }));
+  };
+
+  const householdReady = Boolean(householdState);
+  const logReady = Boolean(logState);
+  const hasFiles = householdReady && logReady;
+
+  const renderHome = () => (
+    <section className="panel">
+      <div className="panel-header">
+        <div>
+          <h2>People</h2>
+          <p>Pick a person to view illness episodes.</p>
+        </div>
+        <button type="button" className="ghost" onClick={() => navigate('#settings')}>
+          Settings
+        </button>
+      </div>
+      <div className="people-grid">
+        {members.map((member) => (
+          <button
+            key={member.id}
+            type="button"
+            className="person-card"
+            style={{ borderColor: member.accentColor }}
+            onClick={() => navigate(`#person=${member.id}`)}
+          >
+            <span className="person-color" style={{ background: member.accentColor }} />
+            <div>
+              <div className="person-name">{member.name}</div>
+              <div className="person-sub">Episodes: {episodes.filter((ep) => ep.memberId === member.id).length}</div>
+            </div>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+
+  const renderPerson = (memberId: string) => {
+    const member = memberMap.get(memberId);
+    if (!member) return <div className="panel">Person not found.</div>;
+    const memberEpisodes = episodes
+      .filter((episode) => episode.memberId === memberId)
+      .sort((a, b) => {
+        const aOpen = a.endedAtISO ? 1 : 0;
+        const bOpen = b.endedAtISO ? 1 : 0;
+        if (aOpen !== bOpen) return aOpen - bOpen;
+        return new Date(b.startedAtISO).getTime() - new Date(a.startedAtISO).getTime();
+      });
+
+    return (
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2>{member.name}</h2>
+            <p style={{ color: member.accentColor }}>Household member</p>
+          </div>
+          <div className="panel-actions">
+            <button type="button" className="primary" onClick={() => createEpisode(member)}>
+              Add episode
+            </button>
+            <button type="button" className="ghost" onClick={() => navigate('#home')}>
+              Back
+            </button>
+          </div>
+        </div>
+        <div className="episode-list">
+          {memberEpisodes.length === 0 && <p className="empty">No episodes yet.</p>}
+          {memberEpisodes.map((episode) => (
+            <button
+              key={episode.id}
+              type="button"
+              className="episode-card"
+              onClick={() => navigate(`#episode=${episode.id}`)}
+            >
+              <div>
+                <div className="episode-title">{episode.category}</div>
+                <div className="episode-sub">
+                  Severity {episode.severity} · {episode.endedAtISO ? `Closed ${formatDate(episode.endedAtISO)}` : 'Ongoing'}
+                </div>
+              </div>
+              <span className={`episode-pill ${episode.endedAtISO ? 'closed' : 'open'}`}>
+                {episode.endedAtISO ? 'Closed' : 'Open'}
+              </span>
+            </button>
+          ))}
+        </div>
+      </section>
+    );
+  };
+
+  const renderEpisode = (episodeId: string) => {
+    const episode = episodes.find((item) => item.id === episodeId);
+    if (!episode) return <div className="panel">Episode not found.</div>;
+    const member = memberMap.get(episode.memberId);
+    return (
+      <EpisodeView
+        episode={episode}
+        member={member}
+        temps={temps.filter((temp) => temp.episodeId === episodeId)}
+        meds={meds.filter((entry) => entry.episodeId === episodeId)}
+        catalog={catalog}
+        onUpdateEpisode={updateEpisode}
+        onAddTemp={addTempEntry}
+        onAddMed={addMedEntry}
+        onUpsertCatalog={upsertCatalogItem}
+        onToggleFavorite={toggleFavorite}
+        onNavigate={navigate}
+      />
+    );
+  };
+
+  const handleSaveMembers = async (nextMembers: Member[]) => {
+    await updateHousehold((current) => ({
+      ...current,
+      members: current.members.map((member, index) => ({
+        ...member,
+        name: nextMembers[index]?.name ?? member.name,
+        accentColor: nextMembers[index]?.accentColor ?? member.accentColor,
+        updatedAtISO: nowISO()
+      }))
+    }));
+  };
+
+  const renderSettings = () => (
+    <SettingsView
+      members={members}
+      householdFileName={householdState?.name}
+      logFileName={logState?.name}
+      drive={drive}
+      lastSyncISO={lastSyncISO}
+      onConnect={handleConnect}
+      onPickFile={handlePickFile}
+      onPickFolderAndCreate={handlePickFolderAndCreate}
+      onSaveMembers={handleSaveMembers}
+      onNavigate={navigate}
+      hasFiles={hasFiles}
+    />
+  );
 
   return (
     <div className="app-shell">
       <header className="topbar">
-        <div className="topbar-inner">
-          <div className="wordmark">PsA</div>
-          <div className="topbar-actions">
-            <div className="theme-toggle" role="group" aria-label="Theme">
-              {(['system', 'dark', 'light'] as ThemeSetting[]).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  className={`theme-option ${themeSetting === mode ? 'active' : ''}`}
-                  onClick={() => setThemeSetting(mode)}
-                >
-                  {mode}
-                </button>
-              ))}
-            </div>
-          </div>
+        <div>
+          <div className="app-title">Our Health</div>
+          <div className="app-sub">Household illness tracking with Drive-backed files.</div>
+        </div>
+        <div className="topbar-actions">
+          <button type="button" className="ghost" onClick={() => navigate('#home')}>
+            Home
+          </button>
+          <button type="button" className="ghost" onClick={() => navigate('#settings')}>
+            Settings
+          </button>
         </div>
       </header>
-      <nav className="tabs">
-        <a className="tab active" href="#log">
-          Log
-        </a>
-        <a className="tab" href="#recent">
-          Recent
-        </a>
-        <a className="tab" href="#backup">
-          Backup
-        </a>
-      </nav>
 
-      <section className="card" id="log">
-        <div className="card-title">
+      {!hasFiles && route.page !== 'settings' && (
+        <section className="callout">
           <div>
-            <h2>Log</h2>
-            <p>Quick entry. Defaults to now, pain 5, last used region.</p>
+            <h2>Complete Setup</h2>
+            <p>Connect Drive and choose data files to start logging.</p>
           </div>
-        </div>
-        <form className="form-grid" onSubmit={handleSubmit}>
-          <label>
-            Start
-            <input
-              type="datetime-local"
-              required
-              value={form.startAt}
-              onChange={(event) => handleFormChange('startAt', event.target.value)}
-            />
-          </label>
-          <label>
-            End (optional)
-            <input
-              type="datetime-local"
-              value={form.endAt}
-              onChange={(event) => handleFormChange('endAt', event.target.value)}
-            />
-          </label>
-          <label>
-            Pain
-            <input
-              type="range"
-              min={0}
-              max={10}
-              value={form.pain}
-              onChange={(event) => handleFormChange('pain', Number(event.target.value))}
-            />
-            <span>{form.pain}/10</span>
-          </label>
-          <label>
-            Region
-            <select value={form.regionKey} onChange={(event) => handleRegionChange(event.target.value)}>
-              <option value="">Select region</option>
-              {REGION_OPTIONS.map((region) => (
-                <option key={region.key} value={region.key}>
-                  {region.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {jointOptions.length > 0 && (
-            <label>
-              Joint
-              <select value={form.jointKey} onChange={(event) => handleJointChange(event.target.value)}>
-                <option value="">Select joint</option>
-                {jointOptions.map((joint) => (
-                  <option key={joint.key} value={joint.key}>
-                    {joint.label}
-                  </option>
-                ))}
-              </select>
-              {jointHelper && <p className="helper-text">{jointHelper}</p>}
-            </label>
-          )}
-          {drillLevels.map((level) => {
-            const value = getDrillKey(level.field);
-            const customValue = getDrillCustom(level.field);
-            return (
-              <label key={level.field}>
-                {level.label}
-                <select
-                  value={value}
-                  onChange={(event) => handleDrillChange(level.field, event.target.value)}
-                >
-                  <option value="">—</option>
-                  {level.options.map((option) => (
-                    <option key={option.key} value={option.key}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-                {value === OTHER_KEY && (
-                  <input
-                    type="text"
-                    value={customValue}
-                    placeholder="Describe other"
-                    onChange={(event) => handleDrillCustomChange(level.field, event.target.value)}
-                  />
-                )}
-              </label>
-            );
-          })}
-          <label>
-            Symptom type
-            <select
-              value={form.symptomKey}
-              onChange={(event) => handleFormChange('symptomKey', event.target.value)}
-            >
-              {SYMPTOM_OPTIONS.map((entry) => (
-                <option key={entry.key} value={entry.key}>
-                  {entry.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {hasOtherSelected(form.symptomKey) && (
-            <label>
-              Describe symptom
-              <input
-                type="text"
-                value={form.symptomCustom}
-                onChange={(event) => handleFormChange('symptomCustom', event.target.value)}
-              />
-            </label>
-          )}
-          <label>
-            Trigger
-            <select
-              value={form.triggerKey}
-              onChange={(event) => handleFormChange('triggerKey', event.target.value)}
-            >
-              <option value="">—</option>
-              {TRIGGER_OPTIONS.map((entry) => (
-                <option key={entry.key} value={entry.key}>
-                  {entry.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {hasOtherSelected(form.triggerKey) && (
-            <label>
-              Describe trigger
-              <input
-                type="text"
-                value={form.triggerCustom}
-                onChange={(event) => handleFormChange('triggerCustom', event.target.value)}
-              />
-            </label>
-          )}
-          <label>
-            Action taken
-            <select
-              value={form.actionKey}
-              onChange={(event) => handleFormChange('actionKey', event.target.value)}
-            >
-              <option value="">—</option>
-              {ACTION_OPTIONS.map((entry) => (
-                <option key={entry.key} value={entry.key}>
-                  {entry.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {hasOtherSelected(form.actionKey) && (
-            <label>
-              Describe action
-              <input
-                type="text"
-                value={form.actionCustom}
-                onChange={(event) => handleFormChange('actionCustom', event.target.value)}
-              />
-            </label>
-          )}
-          {sideMode === 'show' && (
-            <div className="side-group">
-              <p>Side</p>
-              <label className="side-row">
-                <input
-                  type="checkbox"
-                  checked={form.sideLeft}
-                  onChange={(event) => handleFormChange('sideLeft', event.target.checked)}
-                />
-                Left
-              </label>
-              <label className="side-row">
-                <input
-                  type="checkbox"
-                  checked={form.sideRight}
-                  onChange={(event) => handleFormChange('sideRight', event.target.checked)}
-                />
-                Right
-              </label>
-            </div>
-          )}
-          <label className="full-width">
-            Notes
-            <textarea
-              rows={4}
-              value={form.notes}
-              placeholder="Symptom details, treatments, mood..."
-              onChange={(event) => handleFormChange('notes', event.target.value)}
-            />
-          </label>
-          <div className="form-actions full-width">
-            <button type="submit" className="primary">
-              {editingId ? 'Update entry' : 'Save entry'}
+          <div className="callout-actions">
+            <button type="button" className="primary" onClick={() => navigate('#settings')}>
+              Open setup wizard
             </button>
-            {editingId && (
-              <button
-                type="button"
-                className="ghost"
-                onClick={() => setForm(initialForm(rememberedRegionKey, rememberedRegionLabel))}
-              >
-                Cancel
-              </button>
-            )}
-          </div>
-          {formMessage && <p className="message">{formMessage}</p>}
-        </form>
-      </section>
-
-      <div className="card-grid">
-        <section className="card" id="recent">
-          <div className="card-title">
-            <div>
-              <h2>Recent</h2>
-              <p>
-                {baseTimeframeLabel} · {events.length} record{events.length === 1 ? '' : 's'}
-              </p>
-            </div>
-          </div>
-          <div className="filters">
-            <div>
-              <label>
-                Timeframe
-                <select
-                  value={filters.days}
-                  onChange={(event) => handleFiltersChange({ days: Number(event.target.value) })}
-                >
-                  <option value={0}>All</option>
-                  <option value={7}>Last 7 days</option>
-                  <option value={30}>Last 30 days</option>
-                </select>
-              </label>
-            </div>
-            <div>
-              <label>
-                Region
-                <select
-                  value={filters.regionKey ?? ''}
-                  onChange={(event) =>
-                    handleFiltersChange({ regionKey: event.target.value || undefined })
-                  }
-                >
-                  <option value="">All regions</option>
-                  {REGION_OPTIONS.map((region) => (
-                    <option key={region.key} value={region.key}>
-                      {region.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            {filterJointOptions.length > 0 && (
-              <div>
-                <label>
-                  Joint
-                  <select
-                    value={filters.jointKey ?? ''}
-                    onChange={(event) =>
-                      handleFiltersChange({ jointKey: event.target.value || undefined })
-                    }
-                  >
-                    <option value="">All joints</option>
-                    {filterJointOptions.map((joint) => (
-                      <option key={joint.key} value={joint.key}>
-                        {joint.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-            )}
-            <div>
-              <label>
-                Pain ≥ {filters.minPain}
-                <input
-                  type="range"
-                  min={0}
-                  max={10}
-                  value={filters.minPain}
-                  onChange={(event) => handleFiltersChange({ minPain: Number(event.target.value) })}
-                />
-              </label>
-            </div>
-          </div>
-          <div className="event-list">
-            {events.length === 0 && <p className="empty-state">No entries yet.</p>}
-            {groupedEvents.map((group) => (
-              <div key={group.dateKey}>
-                <div className="log-group-title">{group.dateKey}</div>
-                {group.events.map((eventRecord) => {
-                  const summary = buildEventSummary(eventRecord);
-                  const timeLabel = new Date(eventRecord.startAt).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  });
-                  const isOpen = expandedEventId === eventRecord.id;
-                  const symptomLabel = labelForKey(SYMPTOM_OPTIONS, eventRecord.symptomKey);
-                  const triggerLabel = labelForKey(TRIGGER_OPTIONS, eventRecord.triggerKey);
-                  const actionLabel = labelForKey(ACTION_OPTIONS, eventRecord.actionKey);
-                  const sideText = eventRecord.side ? sideLabel(eventRecord.side) : '';
-                  return (
-                    <div key={eventRecord.id}>
-                      <div
-                        className={`log-row ${isOpen ? 'is-open' : ''}`}
-                        role="button"
-                        tabIndex={0}
-                        aria-expanded={isOpen}
-                        onClick={() => setExpandedEventId(isOpen ? null : eventRecord.id)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter' || event.key === ' ') {
-                            event.preventDefault();
-                            setExpandedEventId(isOpen ? null : eventRecord.id);
-                          }
-                        }}
-                      >
-                        <div className="log-row-time">{timeLabel}</div>
-                        <div className="log-row-main" title={summary}>
-                          {summary}
-                        </div>
-                        <div className="log-row-badge">{eventRecord.pain}/10</div>
-                      </div>
-                      {isOpen && (
-                        <div className="log-row-expanded">
-                          <p>
-                            Symptom: {symptomLabel}
-                            {eventRecord.symptomCustom && ` (${eventRecord.symptomCustom})`}
-                          </p>
-                          {eventRecord.triggerKey && (
-                            <p>
-                              Trigger: {triggerLabel}
-                              {eventRecord.triggerCustom && ` (${eventRecord.triggerCustom})`}
-                            </p>
-                          )}
-                          {eventRecord.actionKey && (
-                            <p>
-                              Action: {actionLabel}
-                              {eventRecord.actionCustom && ` (${eventRecord.actionCustom})`}
-                            </p>
-                          )}
-                          {sideText && <p>Side: {sideText}</p>}
-                          {eventRecord.notes && <p className="event-notes">{eventRecord.notes}</p>}
-                          <div className="log-row-actions">
-                            <button type="button" onClick={() => handleEdit(eventRecord)}>
-                              Edit
-                            </button>
-                            <button type="button" onClick={() => handleDelete(eventRecord)}>
-                              Delete
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
           </div>
         </section>
+      )}
 
-        <section className="card" id="backup">
-          <div className="card-title">
-            <div>
-              <h2>Backup</h2>
-              <p>Drive backup & restore + JSON/Excel export.</p>
-            </div>
-          </div>
-          <div className="backup-grid">
-          <div>
-            <label>
-              Export timeframe
-              <select
-                value={backupTimeframe}
-                onChange={(event) => setBackupTimeframe(event.target.value as TimeframeKey)}
-              >
-                {TIMEFRAME_OPTIONS.map((option) => (
-                  <option key={option.key} value={option.key}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <p>Filters apply to JSON/CSV export.</p>
-            <p>
-              Status:{' '}
-              <strong>
-                {driveStatus.configured
-                  ? driveStatus.connected
-                    ? 'Connected'
-                    : 'Configured (connect)'
-                  : 'Not configured'}
-              </strong>
-            </p>
-            <p>Last backup: {formatDate(driveStatus.lastBackupAt)}</p>
-            <p>Last restore: {formatDate(driveStatus.lastRestoreAt)}</p>
-          </div>
-          <div className="backup-actions">
-            <button type="button" onClick={handleExportJson} className="btn btn-secondary">
-              Export JSON
-            </button>
-            <button type="button" onClick={handleExportExcel} className="btn btn-primary">
-              Export Excel
-            </button>
-            <button
-              type="button"
-              disabled={!driveStatus.configured || driveStatus.connected || isDriveBusy}
-              onClick={() => handleDriveAction('connect')}
-            >
-              Connect Google Drive
-            </button>
-            <button
-              type="button"
-              disabled={!driveStatus.connected || isDriveBusy}
-              onClick={() => handleDriveAction('backup')}
-            >
-              Backup now
-            </button>
-            <button
-              type="button"
-              disabled={!driveStatus.connected || isDriveBusy}
-              onClick={() => handleDriveAction('restore')}
-            >
-              Restore from Drive
-            </button>
-          </div>
-        </div>
-        {driveMessage && <p className="message">{driveMessage}</p>}
-      </section>
+      {route.page === 'home' && renderHome()}
+      {route.page === 'person' && renderPerson(route.memberId)}
+      {route.page === 'episode' && renderEpisode(route.episodeId)}
+      {route.page === 'settings' && renderSettings()}
+
+      {localMessage && <p className="message">{localMessage}</p>}
     </div>
-  </div>
   );
 }

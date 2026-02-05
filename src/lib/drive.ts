@@ -1,11 +1,4 @@
-import { exportAllEventsAsJson, importEventsFromJson, type ExportedEvents } from './events';
-import { setMeta, getMeta, setMetaNumber, getMetaNumber } from './db';
-import { DRIVE_FILE_NAME, DRIVE_FOLDER_NAME, DRIVE_SCOPE, GOOGLE_CLIENT_ID } from '../config';
-
-const DRIVE_API_BASE = 'https://www.googleapis.com/drive/v3';
-const DRIVE_UPLOAD_BASE = 'https://www.googleapis.com/upload/drive/v3';
-
-let accessToken: string | null = null;
+﻿import { GOOGLE_API_KEY, GOOGLE_APP_ID, GOOGLE_CLIENT_ID, DRIVE_SCOPE } from '../config';
 
 type TokenResponse = {
   access_token?: string;
@@ -16,6 +9,18 @@ type TokenResponse = {
 
 type TokenClient = {
   requestAccessToken: (options?: { prompt?: string }) => void;
+};
+
+export type PickedDriveFile = {
+  id: string;
+  name: string;
+};
+
+export type DriveFileMeta = {
+  id: string;
+  name: string;
+  etag: string;
+  modifiedTime?: string;
 };
 
 declare global {
@@ -30,26 +35,58 @@ declare global {
           }) => TokenClient;
         };
       };
+      picker?: {
+        ViewId: { DOCS: string; FOLDERS: string };
+        DocsView: new (viewId: string) => {
+          setMimeTypes: (types: string) => unknown;
+          setIncludeFolders: (value: boolean) => unknown;
+          setSelectFolderEnabled: (value: boolean) => unknown;
+          setEnableDrives: (value: boolean) => unknown;
+        };
+        PickerBuilder: new () => {
+          setAppId: (appId: string) => unknown;
+          setDeveloperKey: (key: string) => unknown;
+          setOAuthToken: (token: string) => unknown;
+          setTitle: (title: string) => unknown;
+          addView: (view: unknown) => unknown;
+          setCallback: (callback: (data: PickerResponse) => void) => unknown;
+          build: () => { setVisible: (value: boolean) => void };
+        };
+        Action: { PICKED: string; CANCEL: string };
+        Response: { DOCUMENTS: string };
+        Document: { ID: string; NAME: string };
+      };
+    };
+    gapi?: {
+      load: (api: string, options: { callback: () => void; onerror: () => void }) => void;
     };
   }
 }
 
-export type DriveStatus = {
-  configured: boolean;
-  connected: boolean;
-  folderId?: string;
-  fileId?: string;
-  lastBackupAt?: number;
-  lastRestoreAt?: number;
+type PickerResponse = {
+  action: string;
+  docs?: Array<Record<string, string>>;
 };
 
-export function isDriveAvailable(): boolean {
-  return Boolean(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_ID !== 'YOUR_GOOGLE_CLIENT_ID_HERE');
-}
+const DRIVE_API_BASE = 'https://www.googleapis.com/drive/v3';
+const DRIVE_UPLOAD_BASE = 'https://www.googleapis.com/upload/drive/v3';
+
+let accessToken: string | null = null;
+let tokenClient: TokenClient | null = null;
+let pickerLoaded = false;
+
+export const isDriveConfigured = (): boolean =>
+  Boolean(GOOGLE_CLIENT_ID && GOOGLE_API_KEY);
 
 function ensureClientId(): void {
-  if (!isDriveAvailable()) {
-    throw new Error('Google client ID is not configured. Paste it into src/config.ts.');
+  if (!GOOGLE_CLIENT_ID) {
+    throw new Error('Google client ID is not configured. Set VITE_GOOGLE_CLIENT_ID in .env.local.');
+  }
+}
+
+function ensureApiKey(): void {
+  if (!GOOGLE_API_KEY) {
+    throw new Error('Google API key is not configured. Set VITE_GOOGLE_API_KEY in .env.local.');
   }
 }
 
@@ -59,43 +96,68 @@ function ensureGoogleScript(): void {
   }
 }
 
+function ensurePickerScript(): void {
+  if (!window?.gapi?.load) {
+    throw new Error('Google Picker API is not loaded. Add https://apis.google.com/js/api.js to index.html.');
+  }
+}
+
 async function requestAccessToken(): Promise<string> {
   ensureClientId();
   ensureGoogleScript();
 
   return new Promise<string>((resolve, reject) => {
-    const client = window.google!.accounts!.oauth2!.initTokenClient({
-      client_id: GOOGLE_CLIENT_ID,
-      scope: DRIVE_SCOPE,
-      callback: (response) => {
-        if (response.error) {
-          if (response.error === 'access_denied') {
-            reject(new Error('Access denied. Please allow PsA Logbook to use Google Drive.'));
+    if (!tokenClient) {
+      tokenClient = window.google!.accounts!.oauth2!.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        scope: DRIVE_SCOPE,
+        callback: (response) => {
+          if (response.error) {
+            if (response.error === 'access_denied') {
+              reject(new Error('Access denied. Please allow Our Health to use Google Drive.'));
+              return;
+            }
+            reject(new Error(response.error_description ?? 'Google authorization failed.'));
             return;
           }
-          reject(new Error(response.error_description ?? 'Google authorization failed.'));
-          return;
+          if (!response.access_token) {
+            reject(new Error('Google did not return an access token.'));
+            return;
+          }
+          accessToken = response.access_token;
+          resolve(accessToken);
         }
-        if (!response.access_token) {
-          reject(new Error('Google did not return an access token.'));
-          return;
-        }
-        accessToken = response.access_token;
-        resolve(accessToken);
-      }
-    });
-    client.requestAccessToken({ prompt: '' });
+      });
+    }
+    tokenClient.requestAccessToken({ prompt: '' });
   });
 }
 
 async function ensureAccessToken(): Promise<string> {
-  if (accessToken) {
-    return accessToken;
-  }
+  if (accessToken) return accessToken;
   return requestAccessToken();
 }
 
-async function fetchWithAuth(input: string, init: RequestInit = {}): Promise<Response> {
+async function ensurePickerLoaded(): Promise<void> {
+  if (pickerLoaded) return;
+  ensureApiKey();
+  ensurePickerScript();
+  await new Promise<void>((resolve, reject) => {
+    window.gapi!.load('picker', {
+      callback: () => {
+        pickerLoaded = true;
+        resolve();
+      },
+      onerror: () => reject(new Error('Failed to load Google Picker.'))
+    });
+  });
+}
+
+async function fetchWithAuth(
+  input: string,
+  init: RequestInit = {},
+  allowStatus: number[] = []
+): Promise<Response> {
   const token = await ensureAccessToken();
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
     throw new Error('Offline. Check your network before using Google Drive.');
@@ -105,7 +167,7 @@ async function fetchWithAuth(input: string, init: RequestInit = {}): Promise<Res
 
   try {
     const response = await fetch(input, { ...init, headers });
-    if (!response.ok) {
+    if (!response.ok && !allowStatus.includes(response.status)) {
       const body = await response.json().catch(() => null);
       const message =
         body?.error?.message ||
@@ -130,7 +192,7 @@ async function fetchWithAuth(input: string, init: RequestInit = {}): Promise<Res
 }
 
 function createMultipartBody(metadata: Record<string, unknown>, content: string) {
-  const boundary = `----psa-${Date.now()}`;
+  const boundary = `----our-health-${Date.now()}`;
   const delimiter = `--${boundary}`;
   const closeDelimiter = `${delimiter}--`;
   const body =
@@ -144,151 +206,170 @@ function createMultipartBody(metadata: Record<string, unknown>, content: string)
   return { boundary, body };
 }
 
-async function ensureFolder(): Promise<string> {
-  const cached = await getMeta('driveFolderId');
-  if (cached) {
-    return cached;
-  }
-  const query = `name='${DRIVE_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false and 'root' in parents`;
-  const list = await fetchDriveList(query);
-  const folderId = list?.files?.[0]?.id;
-  if (folderId) {
-    await setMeta('driveFolderId', folderId);
-    return folderId;
-  }
-  const response = await fetchWithAuth(`${DRIVE_API_BASE}/files`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      name: DRIVE_FOLDER_NAME,
-      mimeType: 'application/vnd.google-apps.folder',
-      parents: ['root']
-    })
-  });
-  const data = await response.json();
-  await setMeta('driveFolderId', data.id);
-  return data.id;
+export async function connectDrive(): Promise<void> {
+  await requestAccessToken();
+  await ensurePickerLoaded();
 }
 
-async function ensureFile(folderId: string): Promise<string> {
-  const cached = await getMeta('driveFileId');
-  if (cached) {
-    return cached;
-  }
-  const query = `name='${DRIVE_FILE_NAME}' and '${folderId}' in parents and trashed=false`;
-  const list = await fetchDriveList(query);
-  const fileId = list?.files?.[0]?.id;
-  if (fileId) {
-    await setMeta('driveFileId', fileId);
-    return fileId;
-  }
-  const payload = await exportAllEventsAsJson();
+export async function pickDriveFile(title: string): Promise<PickedDriveFile> {
+  ensureApiKey();
+  await ensureAccessToken();
+  await ensurePickerLoaded();
+
+  return new Promise<PickedDriveFile>((resolve, reject) => {
+    const pickerApi = (window as any).google.picker as any;
+    const view = new pickerApi.DocsView(pickerApi.ViewId.DOCS)
+      .setIncludeFolders(true)
+      .setSelectFolderEnabled(false)
+      .setEnableDrives(true)
+      .setMimeTypes('application/json');
+
+    const builder = new pickerApi.PickerBuilder()
+      .setDeveloperKey(GOOGLE_API_KEY)
+      .setOAuthToken(accessToken!)
+      .setTitle(title)
+      .addView(view)
+      .setCallback((data: PickerResponse) => {
+        const action = data.action;
+        if (action === pickerApi.Action.CANCEL) {
+          reject(new Error('Picker closed.'));
+          return;
+        }
+        if (action === pickerApi.Action.PICKED) {
+          const doc = data.docs?.[0];
+          if (!doc) {
+            reject(new Error('No file selected.'));
+            return;
+          }
+          const id = doc.id ?? doc['id'];
+          const name = doc.name ?? doc['name'];
+          resolve({ id, name });
+        }
+      });
+
+    if (GOOGLE_APP_ID) {
+      builder.setAppId(GOOGLE_APP_ID);
+    }
+
+    builder.build().setVisible(true);
+  });
+}
+
+export async function pickDriveFolder(title: string): Promise<PickedDriveFile> {
+  ensureApiKey();
+  await ensureAccessToken();
+  await ensurePickerLoaded();
+
+  return new Promise<PickedDriveFile>((resolve, reject) => {
+    const pickerApi = (window as any).google.picker as any;
+    const view = new pickerApi.DocsView(pickerApi.ViewId.FOLDERS)
+      .setIncludeFolders(true)
+      .setSelectFolderEnabled(true)
+      .setEnableDrives(true);
+
+    const builder = new pickerApi.PickerBuilder()
+      .setDeveloperKey(GOOGLE_API_KEY)
+      .setOAuthToken(accessToken!)
+      .setTitle(title)
+      .addView(view)
+      .setCallback((data: PickerResponse) => {
+        const action = data.action;
+        if (action === pickerApi.Action.CANCEL) {
+          reject(new Error('Picker closed.'));
+          return;
+        }
+        if (action === pickerApi.Action.PICKED) {
+          const doc = data.docs?.[0];
+          if (!doc) {
+            reject(new Error('No folder selected.'));
+            return;
+          }
+          const id = doc.id ?? doc['id'];
+          const name = doc.name ?? doc['name'];
+          resolve({ id, name });
+        }
+      });
+
+    if (GOOGLE_APP_ID) {
+      builder.setAppId(GOOGLE_APP_ID);
+    }
+
+    builder.build().setVisible(true);
+  });
+}
+
+export async function createDriveJsonFile(
+  folderId: string,
+  filename: string,
+  data: unknown
+): Promise<{ data: unknown; meta: DriveFileMeta }> {
   const { boundary, body } = createMultipartBody(
     {
-      name: DRIVE_FILE_NAME,
+      name: filename,
       parents: [folderId],
       mimeType: 'application/json'
     },
-    JSON.stringify(payload)
+    JSON.stringify(data)
   );
-  const response = await fetchWithAuth(`${DRIVE_UPLOAD_BASE}/files?uploadType=multipart`, {
+  const response = await fetchWithAuth(`${DRIVE_UPLOAD_BASE}/files?uploadType=multipart&fields=id,name,etag,modifiedTime`, {
     method: 'POST',
     headers: {
       'Content-Type': `multipart/related; boundary=${boundary}`
     },
     body
   });
-  const data = await response.json();
-  await setMeta('driveFileId', data.id);
-  return data.id;
+  const meta = (await response.json()) as DriveFileMeta;
+  return { data, meta };
 }
 
-async function fetchDriveList(query: string) {
-  const encoded = encodeURIComponent(query);
-  const url = `${DRIVE_API_BASE}/files?q=${encoded}&spaces=drive&fields=files(id,name)`;
-  const response = await fetchWithAuth(url, { method: 'GET' });
-  return response.json();
-}
-
-async function ensureFileInFolder(fileId: string, folderId: string): Promise<void> {
-  const response = await fetchWithAuth(`${DRIVE_API_BASE}/files/${fileId}?fields=parents`, { method: 'GET' });
-  const data = (await response.json()) as { parents?: string[] };
-  const parents = data.parents ?? [];
-  if (parents.includes(folderId)) {
-    return;
-  }
-
-  const params = new URLSearchParams();
-  params.set('addParents', folderId);
-  if (parents.length > 0) {
-    params.set('removeParents', parents.join(','));
-  }
-
-  await fetchWithAuth(`${DRIVE_API_BASE}/files/${fileId}?${params.toString()}`, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({})
-  });
-}
-
-export async function connectDrive(): Promise<DriveStatus> {
-  await requestAccessToken();
-  return getDriveStatus();
-}
-
-export async function getDriveStatus(): Promise<DriveStatus> {
-  const folderId = await getMeta('driveFolderId');
-  const fileId = await getMeta('driveFileId');
-  const lastBackupAt = await getMetaNumber('lastBackupAt');
-  const lastRestoreAt = await getMetaNumber('lastRestoreAt');
-  return {
-    configured: isDriveAvailable(),
-    connected: Boolean(accessToken),
-    folderId: folderId ?? undefined,
-    fileId: fileId ?? undefined,
-    lastBackupAt: lastBackupAt ?? undefined,
-    lastRestoreAt: lastRestoreAt ?? undefined
-  };
-}
-
-export async function backupToDrive(): Promise<string> {
-  const folderId = await ensureFolder();
-  const fileId = await ensureFile(folderId);
-  await ensureFileInFolder(fileId, folderId);
-  const payload = await exportAllEventsAsJson();
-  const content = JSON.stringify(payload);
-  await fetchWithAuth(`${DRIVE_UPLOAD_BASE}/files/${fileId}?uploadType=media`, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: content
-  });
-  await setMetaNumber('lastBackupAt', Date.now());
-  return 'Backup complete';
-}
-
-export async function restoreFromDrive(): Promise<{ imported: number }> {
-  const folderId = await ensureFolder();
-  const fileId = await ensureFile(folderId);
-  await ensureFileInFolder(fileId, folderId);
+export async function readDriveJson<T>(fileId: string): Promise<{ data: T; meta: DriveFileMeta }> {
+  const metaResponse = await fetchWithAuth(
+    `${DRIVE_API_BASE}/files/${fileId}?fields=id,name,etag,modifiedTime`,
+    { method: 'GET' }
+  );
+  const meta = (await metaResponse.json()) as DriveFileMeta;
   const response = await fetchWithAuth(`${DRIVE_API_BASE}/files/${fileId}?alt=media`, { method: 'GET' });
-  const json = (await response.json()) as ExportedEvents;
-  const result = await importEventsFromJson(json);
-  await setMetaNumber('lastRestoreAt', Date.now());
-  return result;
+  const data = (await response.json()) as T;
+  return { data, meta };
 }
 
-export async function importJsonFile(contents: string): Promise<{ imported: number }> {
-  const parsed = JSON.parse(contents) as ExportedEvents;
-  return importEventsFromJson(parsed);
-}
+export async function writeDriveJson<T>(
+  fileId: string,
+  etag: string | null,
+  nextData: T,
+  merge: (local: T, remote: T) => T
+): Promise<{ data: T; meta: DriveFileMeta; merged: boolean }> {
+  const attempt = await fetchWithAuth(
+    `${DRIVE_UPLOAD_BASE}/files/${fileId}?uploadType=media&fields=id,name,etag,modifiedTime`,
+    {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(etag ? { 'If-Match': etag } : {})
+      },
+      body: JSON.stringify(nextData)
+    },
+    [412]
+  );
 
-export async function exportJsonFile(): Promise<string> {
-  const data = await exportAllEventsAsJson();
-  return JSON.stringify(data, null, 2);
+  if (attempt.status !== 412) {
+    const meta = (await attempt.json()) as DriveFileMeta;
+    return { data: nextData, meta, merged: false };
+  }
+
+  const latest = await readDriveJson<T>(fileId);
+  const mergedData = merge(nextData, latest.data);
+  const retry = await fetchWithAuth(
+    `${DRIVE_UPLOAD_BASE}/files/${fileId}?uploadType=media&fields=id,name,etag,modifiedTime`,
+    {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'If-Match': latest.meta.etag
+      },
+      body: JSON.stringify(mergedData)
+    }
+  );
+  const meta = (await retry.json()) as DriveFileMeta;
+  return { data: mergedData, meta, merged: true };
 }
