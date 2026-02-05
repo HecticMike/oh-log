@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
-import { APP_NAME, DRIVE_FILE_NAME, DRIVE_FOLDER_NAME } from './config';
+import { DRIVE_FILE_NAME, DRIVE_FOLDER_NAME } from './config';
 import {
   createEvent,
   deleteEvent,
@@ -452,20 +452,35 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <header className="app-header">
-        <div>
-          <p className="eyebrow">{APP_NAME}</p>
-          <h1>Psoriatic arthritis logbook · mobile-first PWA</h1>
+      <header className="topbar">
+        <div className="brand">
+          <div className="wordmark">PsA</div>
+          <div className="subtitle">Logbook</div>
         </div>
-        <p className="intro">
-          Track pain, treatments, and regions locally. Drive backups happen only when you tap the buttons.
-        </p>
+        <div className="topbar-status">
+          <span className={`badge ${driveStatus.connected ? 'badge-success' : 'badge-muted'}`}>
+            {driveStatus.connected ? 'Drive connected' : 'Offline ready'}
+          </span>
+        </div>
       </header>
+      <nav className="tabs">
+        <a className="tab active" href="#log">
+          Log
+        </a>
+        <a className="tab" href="#recent">
+          Recent
+        </a>
+        <a className="tab" href="#backup">
+          Backup
+        </a>
+      </nav>
 
-      <section className="panel">
-        <div className="panel-heading">
-          <h2>Log</h2>
-          <p>Quick entry. Defaults to now, pain 5, last used region.</p>
+      <section className="card" id="log">
+        <div className="card-title">
+          <div>
+            <h2>Log</h2>
+            <p>Quick entry. Defaults to now, pain 5, last used region.</p>
+          </div>
         </div>
         <form className="form-grid" onSubmit={handleSubmit}>
           <label>
@@ -668,140 +683,145 @@ export default function App() {
         </form>
       </section>
 
-      <section className="panel">
-        <div className="panel-heading">
-          <h2>Recent</h2>
-          <p>
-            {baseTimeframeLabel} · {events.length} record{events.length === 1 ? '' : 's'}
-          </p>
-        </div>
-        <div className="filters">
-          <div>
-            <label>
-              Timeframe
-              <select
-                value={filters.days}
-                onChange={(event) => handleFiltersChange({ days: Number(event.target.value) })}
-              >
-                <option value={0}>All</option>
-                <option value={7}>Last 7 days</option>
-                <option value={30}>Last 30 days</option>
-              </select>
-            </label>
+      <div className="card-grid">
+        <section className="card" id="recent">
+          <div className="card-title">
+            <div>
+              <h2>Recent</h2>
+              <p>
+                {baseTimeframeLabel} · {events.length} record{events.length === 1 ? '' : 's'}
+              </p>
+            </div>
           </div>
-          <div>
-            <label>
-              Region
-              <select
-                value={filters.regionKey ?? ''}
-                onChange={(event) =>
-                  handleFiltersChange({ regionKey: event.target.value || undefined })
-                }
-              >
-                <option value="">All regions</option>
-                {REGION_OPTIONS.map((region) => (
-                  <option key={region.key} value={region.key}>
-                    {region.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          {filterJointOptions.length > 0 && (
+          <div className="filters">
             <div>
               <label>
-                Joint
+                Timeframe
                 <select
-                  value={filters.jointKey ?? ''}
+                  value={filters.days}
+                  onChange={(event) => handleFiltersChange({ days: Number(event.target.value) })}
+                >
+                  <option value={0}>All</option>
+                  <option value={7}>Last 7 days</option>
+                  <option value={30}>Last 30 days</option>
+                </select>
+              </label>
+            </div>
+            <div>
+              <label>
+                Region
+                <select
+                  value={filters.regionKey ?? ''}
                   onChange={(event) =>
-                    handleFiltersChange({ jointKey: event.target.value || undefined })
+                    handleFiltersChange({ regionKey: event.target.value || undefined })
                   }
                 >
-                  <option value="">All joints</option>
-                  {filterJointOptions.map((joint) => (
-                    <option key={joint.key} value={joint.key}>
-                      {joint.label}
+                  <option value="">All regions</option>
+                  {REGION_OPTIONS.map((region) => (
+                    <option key={region.key} value={region.key}>
+                      {region.label}
                     </option>
                   ))}
                 </select>
               </label>
             </div>
-          )}
-          <div>
-            <label>
-              Pain ≥ {filters.minPain}
-              <input
-                type="range"
-                min={0}
-                max={10}
-                value={filters.minPain}
-                onChange={(event) => handleFiltersChange({ minPain: Number(event.target.value) })}
-              />
-            </label>
-          </div>
-        </div>
-        <div className="event-list">
-          {events.length === 0 && <p className="empty-state">No entries yet.</p>}
-      {events.map((eventRecord) => {
-        const regionLabel = eventRecord.regionKey
-          ? labelForKey(REGION_OPTIONS, eventRecord.regionKey)
-          : eventRecord.region;
-        const jointOptions = jointsForRegion(eventRecord.regionKey ?? '');
-        const jointLabel = eventRecord.jointKey
-          ? labelForKey(jointOptions ?? [], eventRecord.jointKey)
-          : 'Unspecified joint';
-        const drillLevelsForEvent = drilldownsFor(
-          eventRecord.regionKey ?? '',
-          eventRecord.jointKey ?? ''
-        );
-        const drillLabels = drillLevelsForEvent
-          .map((level) => drillLabelForEvent(eventRecord, level))
-          .filter((label): label is string => Boolean(label));
-        return (
-          <article className="event-card" key={eventRecord.id}>
+            {filterJointOptions.length > 0 && (
+              <div>
+                <label>
+                  Joint
+                  <select
+                    value={filters.jointKey ?? ''}
+                    onChange={(event) =>
+                      handleFiltersChange({ jointKey: event.target.value || undefined })
+                    }
+                  >
+                    <option value="">All joints</option>
+                    {filterJointOptions.map((joint) => (
+                      <option key={joint.key} value={joint.key}>
+                        {joint.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            )}
             <div>
-              <p className="event-date">{new Date(eventRecord.startAt).toLocaleString()}</p>
-              <p className="event-meta">
-                Pain {eventRecord.pain}/10 · {regionLabel || 'Unspecified region'} · {jointLabel}
-              </p>
-              {drillLabels.length > 0 && (
-                <p className="event-meta">Drilldown: {drillLabels.join(' · ')}</p>
-              )}
-              <p className="event-meta">
-                Symptom: {labelForKey(SYMPTOM_OPTIONS, eventRecord.symptomKey)}{' '}
-                {eventRecord.symptomCustom && `(${eventRecord.symptomCustom})`}
-              </p>
-              <p className="event-meta">
-                Trigger: {labelForKey(TRIGGER_OPTIONS, eventRecord.triggerKey)}{' '}
-                {eventRecord.triggerCustom && `(${eventRecord.triggerCustom})`}
-              </p>
-              <p className="event-meta">
-                Action: {labelForKey(ACTION_OPTIONS, eventRecord.actionKey)}{' '}
-                {eventRecord.actionCustom && `(${eventRecord.actionCustom})`}
-              </p>
-              <p className="event-meta">Side: {sideLabel(eventRecord.side ?? '')}</p>
-              {eventRecord.notes && <p className="event-notes">{eventRecord.notes}</p>}
+              <label>
+                Pain ≥ {filters.minPain}
+                <input
+                  type="range"
+                  min={0}
+                  max={10}
+                  value={filters.minPain}
+                  onChange={(event) => handleFiltersChange({ minPain: Number(event.target.value) })}
+                />
+              </label>
             </div>
-            <div className="event-actions">
-              <button type="button" onClick={() => handleEdit(eventRecord)}>
-                Edit
-              </button>
-              <button type="button" onClick={() => handleDelete(eventRecord)}>
-                Delete
-              </button>
-            </div>
-          </article>
-        );
-      })}
-        </div>
-      </section>
+          </div>
+          <div className="event-list">
+            {events.length === 0 && <p className="empty-state">No entries yet.</p>}
+            {events.map((eventRecord) => {
+              const regionLabel = eventRecord.regionKey
+                ? labelForKey(REGION_OPTIONS, eventRecord.regionKey)
+                : eventRecord.region;
+              const jointOptions = jointsForRegion(eventRecord.regionKey ?? '');
+              const jointLabel = eventRecord.jointKey
+                ? labelForKey(jointOptions ?? [], eventRecord.jointKey)
+                : 'Unspecified joint';
+              const drillLevelsForEvent = drilldownsFor(
+                eventRecord.regionKey ?? '',
+                eventRecord.jointKey ?? ''
+              );
+              const drillLabels = drillLevelsForEvent
+                .map((level) => drillLabelForEvent(eventRecord, level))
+                .filter((label): label is string => Boolean(label));
+              return (
+                <article className="event-card" key={eventRecord.id}>
+                  <div>
+                    <p className="event-date">{new Date(eventRecord.startAt).toLocaleString()}</p>
+                    <p className="event-meta">
+                      Pain {eventRecord.pain}/10 · {regionLabel || 'Unspecified region'} · {jointLabel}
+                    </p>
+                    {drillLabels.length > 0 && (
+                      <p className="event-meta">Drilldown: {drillLabels.join(' · ')}</p>
+                    )}
+                    <p className="event-meta">
+                      Symptom: {labelForKey(SYMPTOM_OPTIONS, eventRecord.symptomKey)}{' '}
+                      {eventRecord.symptomCustom && `(${eventRecord.symptomCustom})`}
+                    </p>
+                    <p className="event-meta">
+                      Trigger: {labelForKey(TRIGGER_OPTIONS, eventRecord.triggerKey)}{' '}
+                      {eventRecord.triggerCustom && `(${eventRecord.triggerCustom})`}
+                    </p>
+                    <p className="event-meta">
+                      Action: {labelForKey(ACTION_OPTIONS, eventRecord.actionKey)}{' '}
+                      {eventRecord.actionCustom && `(${eventRecord.actionCustom})`}
+                    </p>
+                    <p className="event-meta">Side: {sideLabel(eventRecord.side ?? '')}</p>
+                    {eventRecord.notes && <p className="event-notes">{eventRecord.notes}</p>}
+                  </div>
+                  <div className="event-actions">
+                    <button type="button" onClick={() => handleEdit(eventRecord)}>
+                      Edit
+                    </button>
+                    <button type="button" onClick={() => handleDelete(eventRecord)}>
+                      Delete
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
 
-      <section className="panel">
-        <div className="panel-heading">
-          <h2>Backup</h2>
-          <p>Drive backup & restore + JSON/CSV export.</p>
-        </div>
-        <div className="backup-grid">
+        <section className="card" id="backup">
+          <div className="card-title">
+            <div>
+              <h2>Backup</h2>
+              <p>Drive backup & restore + JSON/Excel export.</p>
+            </div>
+          </div>
+          <div className="backup-grid">
           <div>
             <label>
               Export timeframe
@@ -831,10 +851,10 @@ export default function App() {
             <p>Last restore: {formatDate(driveStatus.lastRestoreAt)}</p>
           </div>
           <div className="backup-actions">
-            <button type="button" onClick={handleExportJson}>
+            <button type="button" onClick={handleExportJson} className="btn btn-secondary">
               Export JSON
             </button>
-            <button type="button" onClick={handleExportExcel}>
+            <button type="button" onClick={handleExportExcel} className="btn btn-primary">
               Export Excel
             </button>
             <button
@@ -870,5 +890,6 @@ export default function App() {
         {driveMessage && <p className="message">{driveMessage}</p>}
       </section>
     </div>
+  </div>
   );
 }
