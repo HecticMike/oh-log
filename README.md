@@ -58,6 +58,7 @@ npm run build
 2. Use the Setup Wizard:
    - Step 1: Sign in with Google.
    - Step 2: Create new shared files (pick a folder) or select existing `household.json` and `our-health-log.json`.
+   - If the folder picker does not show your My Drive folders (e.g., only Shared drives appear), use the “Create files in My Drive (no folder selection)” button, then move the created files into the shared folder afterward; the file IDs stay the same.
 3. Add episodes, temperature entries, and medications. Changes save directly to Drive.
 
 ## Merge Behavior

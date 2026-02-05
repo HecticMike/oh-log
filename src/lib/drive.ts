@@ -196,6 +196,50 @@ async function fetchWithAuth(
   }
 }
 
+const asString = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined);
+
+async function parseMetaResponse(response: Response): Promise<DriveFileMeta> {
+  const payload = (await response.json()) as Record<string, unknown>;
+  return {
+    id: asString(payload.id) ?? asString(payload['id']) ?? '',
+    name: asString(payload.name) ?? asString(payload['name']) ?? '',
+    modifiedTime: asString(payload.modifiedTime),
+    etag: response.headers.get('etag') ?? ''
+  };
+}
+
+const gatherIds = (value: unknown, accumulator = new Set<string>()): Set<string> => {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (item && typeof item === 'object') {
+        const id = asString((item as Record<string, unknown>).id);
+        if (id) {
+          accumulator.add(id);
+        }
+      }
+    }
+  } else if (value && typeof value === 'object') {
+    for (const child of Object.values(value)) {
+      gatherIds(child, accumulator);
+    }
+  }
+  return accumulator;
+};
+
+const hasMissingLocalIds = (local: unknown, remote: unknown): boolean => {
+  const localIds = gatherIds(local);
+  if (localIds.size === 0) {
+    return false;
+  }
+  const remoteIds = gatherIds(remote);
+  for (const id of localIds) {
+    if (!remoteIds.has(id)) {
+      return true;
+    }
+  }
+  return false;
+};
+
 function createMultipartBody(metadata: Record<string, unknown>, content: string) {
   const boundary = `----our-health-${Date.now()}`;
   const delimiter = `--${boundary}`;
@@ -267,7 +311,11 @@ export async function pickDriveFolder(title: string): Promise<PickedDriveFile> {
 
   return new Promise<PickedDriveFile>((resolve, reject) => {
     const pickerApi = (window as any).google.picker as any;
-    const view = new pickerApi.DocsView(pickerApi.ViewId.FOLDERS)
+    const myDriveView = new pickerApi.DocsView(pickerApi.ViewId.FOLDERS)
+      .setIncludeFolders(true)
+      .setSelectFolderEnabled(true)
+      .setEnableDrives(false);
+    const sharedDrivesView = new pickerApi.DocsView(pickerApi.ViewId.FOLDERS)
       .setIncludeFolders(true)
       .setSelectFolderEnabled(true)
       .setEnableDrives(true);
@@ -276,7 +324,8 @@ export async function pickDriveFolder(title: string): Promise<PickedDriveFile> {
       .setDeveloperKey(GOOGLE_API_KEY)
       .setOAuthToken(accessToken!)
       .setTitle(title)
-      .addView(view)
+      .addView(myDriveView)
+      .addView(sharedDrivesView)
       .setCallback((data: PickerResponse) => {
         const action = data.action;
         if (action === pickerApi.Action.CANCEL) {
@@ -313,48 +362,57 @@ export async function getDriveUser(): Promise<DriveUserInfo> {
 }
 
 export async function createDriveJsonFile(
-  folderId: string,
+  folderId: string | null,
   filename: string,
   data: unknown
 ): Promise<{ data: unknown; meta: DriveFileMeta }> {
-  const { boundary, body } = createMultipartBody(
+  const metadata: Record<string, unknown> = {
+    name: filename,
+    mimeType: 'application/json'
+  };
+  if (folderId) {
+    metadata.parents = [folderId];
+  }
+  const { boundary, body } = createMultipartBody(metadata, JSON.stringify(data));
+  const response = await fetchWithAuth(
+    `${DRIVE_UPLOAD_BASE}/files?uploadType=multipart&fields=id,name,modifiedTime`,
     {
-      name: filename,
-      parents: [folderId],
-      mimeType: 'application/json'
-    },
-    JSON.stringify(data)
+      method: 'POST',
+      headers: {
+        'Content-Type': `multipart/related; boundary=${boundary}`
+      },
+      body
+    }
   );
-  const response = await fetchWithAuth(`${DRIVE_UPLOAD_BASE}/files?uploadType=multipart&fields=id,name,etag,modifiedTime`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': `multipart/related; boundary=${boundary}`
-    },
-    body
-  });
-  const meta = (await response.json()) as DriveFileMeta;
+  const meta = await parseMetaResponse(response);
   return { data, meta };
 }
 
 export async function readDriveJson<T>(fileId: string): Promise<{ data: T; meta: DriveFileMeta }> {
   const metaResponse = await fetchWithAuth(
-    `${DRIVE_API_BASE}/files/${fileId}?fields=id,name,etag,modifiedTime`,
+    `${DRIVE_API_BASE}/files/${fileId}?fields=id,name,modifiedTime`,
     { method: 'GET' }
   );
-  const meta = (await metaResponse.json()) as DriveFileMeta;
+  const meta = await parseMetaResponse(metaResponse);
   const response = await fetchWithAuth(`${DRIVE_API_BASE}/files/${fileId}?alt=media`, { method: 'GET' });
   const data = (await response.json()) as T;
   return { data, meta };
 }
 
+type WriteDriveOptions = {
+  verifyAfterWrite?: boolean;
+};
+
 export async function writeDriveJson<T>(
   fileId: string,
   etag: string | null,
   nextData: T,
-  merge: (local: T, remote: T) => T
+  merge: (local: T, remote: T) => T,
+  options?: WriteDriveOptions
 ): Promise<{ data: T; meta: DriveFileMeta; merged: boolean }> {
+  const verifyAfterWrite = options?.verifyAfterWrite ?? true;
   const attempt = await fetchWithAuth(
-    `${DRIVE_UPLOAD_BASE}/files/${fileId}?uploadType=media&fields=id,name,etag,modifiedTime`,
+    `${DRIVE_UPLOAD_BASE}/files/${fileId}?uploadType=media&fields=id,name,modifiedTime`,
     {
       method: 'PATCH',
       headers: {
@@ -366,24 +424,29 @@ export async function writeDriveJson<T>(
     [412]
   );
 
-  if (attempt.status !== 412) {
-    const meta = (await attempt.json()) as DriveFileMeta;
-    return { data: nextData, meta, merged: false };
+  if (attempt.status === 412) {
+    const latest = await readDriveJson<T>(fileId);
+    const mergedData = merge(nextData, latest.data);
+    const result = await writeDriveJson(fileId, latest.meta.etag, mergedData, merge);
+    return { data: result.data, meta: result.meta, merged: true };
   }
 
-  const latest = await readDriveJson<T>(fileId);
-  const mergedData = merge(nextData, latest.data);
-  const retry = await fetchWithAuth(
-    `${DRIVE_UPLOAD_BASE}/files/${fileId}?uploadType=media&fields=id,name,etag,modifiedTime`,
-    {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'If-Match': latest.meta.etag
-      },
-      body: JSON.stringify(mergedData)
+  const meta = await parseMetaResponse(attempt);
+
+  if (verifyAfterWrite) {
+    const afterWrite = await readDriveJson<T>(fileId);
+    if (hasMissingLocalIds(nextData, afterWrite.data)) {
+      const mergedData = merge(nextData, afterWrite.data);
+      const retryResult = await writeDriveJson(
+        fileId,
+        afterWrite.meta.etag,
+        mergedData,
+        merge,
+        { verifyAfterWrite: false }
+      );
+      return { data: retryResult.data, meta: retryResult.meta, merged: true };
     }
-  );
-  const meta = (await retry.json()) as DriveFileMeta;
-  return { data: mergedData, meta, merged: true };
+  }
+
+  return { data: nextData, meta, merged: false };
 }

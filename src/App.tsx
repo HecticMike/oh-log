@@ -492,6 +492,7 @@ type SettingsViewProps = {
   onConnect: () => Promise<void>;
   onPickFile: (kind: 'household' | 'log') => Promise<void>;
   onPickFolderAndCreate: () => Promise<void>;
+  onCreateInMyDrive: () => Promise<void>;
   onSaveMembers: (nextMembers: Member[]) => Promise<void>;
   onNavigate: (hash: string) => void;
   hasFiles: boolean;
@@ -509,6 +510,7 @@ const SettingsView = ({
   onConnect,
   onPickFile,
   onPickFolderAndCreate,
+  onCreateInMyDrive,
   onSaveMembers,
   onNavigate,
   hasFiles
@@ -570,13 +572,21 @@ const SettingsView = ({
               <p>Create new shared files or pick existing ones.</p>
         </div>
           <div className="wizard-actions">
-            <button
-              type="button"
-              onClick={onPickFolderAndCreate}
-              disabled={!drive.connected || drive.busy || !diagnostics.appIdConfigured}
-            >
-              Create new shared data files
-            </button>
+          <button
+            type="button"
+            onClick={onPickFolderAndCreate}
+            disabled={!drive.connected || drive.busy || !diagnostics.appIdConfigured}
+          >
+            Create new shared data files
+          </button>
+          <button
+            type="button"
+            className="ghost"
+            onClick={onCreateInMyDrive}
+            disabled={!drive.connected || drive.busy}
+          >
+            Create files in My Drive (no folder selection)
+          </button>
           <button type="button" onClick={() => onPickFile('household')} disabled={!drive.connected || drive.busy}>
             Pick existing household.json
           </button>
@@ -705,6 +715,8 @@ export default function App() {
     'Developer key invalid. Ensure the API key allows https://<owner>.github.io/<repo>/, the Google Picker API is enabled before applying restrictions, and clear the PWA/service worker cache before rerunning.';
   const blockedAccountChecklist =
     'Cannot access your Google account. Check your OAuth JavaScript origin (https://<owner>.github.io), add this account as a test user, and allow cross-site tracking/cookies in Safari before trying again.';
+  const folderPickerFallbackNotice =
+    'Folder picker results may be limited to Shared drives; use the "Create files in My Drive" fallback and move the files into your shared folder later.';
   const annotateDeveloperKeyError = (err: unknown): boolean => {
     const message = err instanceof Error ? err.message : String(err);
     const lower = message.toLowerCase();
@@ -766,6 +778,55 @@ export default function App() {
       await refreshDriveAccount();
     } catch (err) {
       setDriveMessage((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleCreateInMyDrive = async () => {
+    setBusy(true);
+    setDriveMessage(null);
+    setFolderNotice(null);
+    if (!GOOGLE_API_KEY_DEFINED) {
+      setFolderNotice('Missing VITE_GOOGLE_API_KEY in build - check GitHub Actions secrets.');
+      setBusy(false);
+      return;
+    }
+    try {
+      if (!drive.connected) {
+        await connectDrive();
+        setDrive((prev) => ({ ...prev, connected: true }));
+      }
+      const householdTemplate = emptyHousehold();
+      const logTemplate = emptyLog();
+      const householdResult = await createDriveJsonFile(null, 'household.json', householdTemplate);
+      const logResult = await createDriveJsonFile(null, 'our-health-log.json', logTemplate);
+      setStoredHouseholdFileId(householdResult.meta.id);
+      setStoredLogFileId(logResult.meta.id);
+      setHouseholdState({
+        fileId: householdResult.meta.id,
+        name: householdResult.meta.name,
+        etag: householdResult.meta.etag,
+        modifiedTime: householdResult.meta.modifiedTime,
+        data: householdTemplate
+      });
+      setLogState({
+        fileId: logResult.meta.id,
+        name: logResult.meta.name,
+        etag: logResult.meta.etag,
+        modifiedTime: logResult.meta.modifiedTime,
+        data: logTemplate
+      });
+      setFolderNotice(
+        'Created household.json and our-health-log.json in My Drive. Move them into your shared folder later and the file IDs will stay the same.'
+      );
+      setLastSyncISO(nowISO());
+      await refreshDriveAccount();
+    } catch (err) {
+      setDriveMessage((err as Error).message);
+      if (annotateDeveloperKeyError(err)) {
+        return;
+      }
     } finally {
       setBusy(false);
     }
@@ -845,8 +906,9 @@ export default function App() {
       if (annotateDeveloperKeyError(err)) {
         return;
       }
-      if ((err as Error).message.includes('No folder selected') || (err as Error).message.includes('Picker closed')) {
-        setFolderNotice('If you created the folder in another Google account, switch accounts and try again.');
+      const text = (err as Error).message;
+      if (text.includes('No folder selected') || text.includes('Picker closed')) {
+        setFolderNotice(folderPickerFallbackNotice);
       }
     } finally {
       setBusy(false);
@@ -1143,9 +1205,10 @@ export default function App() {
         onConnect={handleConnect}
         onPickFile={handlePickFile}
         onPickFolderAndCreate={handlePickFolderAndCreate}
-      onSaveMembers={handleSaveMembers}
-      onNavigate={navigate}
-      hasFiles={hasFiles}
+        onCreateInMyDrive={handleCreateInMyDrive}
+        onSaveMembers={handleSaveMembers}
+        onNavigate={navigate}
+        hasFiles={hasFiles}
     />
   );
 
