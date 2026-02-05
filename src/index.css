@@ -1,14 +1,16 @@
 :root {
-  --bg: #050714;
+  --bg: #070a18;
+  --bg-2: #0a0f24;
   --panel: #0b1026;
   --panel-soft: #0a0f22;
-  --border: rgba(255, 255, 255, 0.1);
+  --border: rgba(255, 255, 255, 0.12);
   --text: rgba(255, 255, 255, 0.92);
   --muted: rgba(255, 255, 255, 0.62);
-  --accent: #2de2e6;
-  --accent-2: #b15cff;
-  --success: #3be37a;
-  --danger: #ff4d6d;
+  --accent: #c6ff00;
+  --accent-2: #ff6b00;
+  --success: #00e676;
+  --danger: #ff3b5c;
+  --radius: 0px;
 }
 
 *,
@@ -26,9 +28,9 @@ body {
   margin: 0;
   font-family: 'Space Grotesk', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   color: var(--text);
-  background: radial-gradient(circle at 20% -10%, rgba(45, 226, 230, 0.1), transparent 50%),
-    radial-gradient(circle at 80% 10%, rgba(177, 92, 255, 0.08), transparent 40%),
-    linear-gradient(180deg, var(--bg) 0%, #080e24 70%, #050714 100%);
+  background: var(--bg);
+  background-image: radial-gradient(circle at 20% 20%, rgba(198, 255, 0, 0.08), transparent 40%),
+    radial-gradient(circle at 80% 65%, rgba(255, 107, 0, 0.07), transparent 35%);
 }
 
 .app-shell {
@@ -42,13 +44,12 @@ body {
 
 .topbar {
   border: 1px solid var(--border);
-  border-radius: 24px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01));
+  border-radius: var(--radius);
+  background: var(--panel-soft);
   padding: 1rem 1.5rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  box-shadow: 0 20px 40px rgba(3, 9, 20, 0.5);
 }
 
 .brand {
@@ -73,7 +74,6 @@ body {
 
 .topbar-status .badge {
   padding: 0.35rem 0.75rem;
-  text-transform: uppercase;
   letter-spacing: 0.3em;
   font-size: 0.65rem;
 }
@@ -87,29 +87,29 @@ body {
 
 .tab {
   padding: 0.35rem 0.9rem;
-  border-radius: 999px;
+  border-radius: var(--radius);
   font-size: 0.75rem;
   letter-spacing: 0.3em;
   text-transform: uppercase;
   color: var(--muted);
   border: 1px solid transparent;
+  border-bottom: 2px solid transparent;
   text-decoration: none;
-  transition: all 0.2s ease;
+  transition: color 0.2s ease, border-color 0.2s ease;
 }
 
 .tab.active {
   color: var(--accent-2);
-  border-color: rgba(255, 255, 255, 0.2);
-  box-shadow: 0 10px 25px rgba(2, 6, 20, 0.5);
-  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--border);
+  border-bottom: 2px solid var(--accent);
+  background: transparent;
 }
 
 .card {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 24px;
+  border-radius: var(--radius);
   padding: 1.5rem;
-  box-shadow: 0 30px 60px rgba(3, 6, 20, 0.65);
 }
 
 .card-title {
@@ -148,8 +148,8 @@ body {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
-.field label,
-label {
+label,
+.field label {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
@@ -164,7 +164,7 @@ textarea,
 select {
   background: var(--panel-soft);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius);
   padding: 0.85rem;
   color: var(--text);
   font-family: inherit;
@@ -175,7 +175,6 @@ input:focus,
 textarea:focus,
 select:focus {
   outline: 2px solid var(--accent);
-  border-color: transparent;
 }
 
 textarea {
@@ -183,38 +182,35 @@ textarea {
 }
 
 .btn {
-  border-radius: 999px;
-  border: 1px solid transparent;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
   padding: 0.65rem 1.2rem;
   font-weight: 600;
   letter-spacing: 0.2em;
   font-size: 0.75rem;
   text-transform: uppercase;
   cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  background: transparent;
+  color: var(--text);
 }
 
 .btn-primary {
   background: var(--accent);
-  color: #041223;
-  box-shadow: 0 10px 25px rgba(45, 226, 230, 0.25);
+  color: #050714;
 }
 
 .btn-secondary {
-  background: transparent;
-  color: var(--text);
-  border-color: rgba(255, 255, 255, 0.2);
+  border-color: var(--border);
 }
 
 .btn-ghost {
-  background: transparent;
-  color: var(--muted);
   border-color: transparent;
+  color: var(--muted);
 }
 
 button {
   font-family: inherit;
-  border-radius: 14px;
+  border-radius: var(--radius);
   padding: 0.65rem 1rem;
   border: 1px solid var(--border);
   background: var(--panel-soft);
@@ -230,7 +226,7 @@ button:hover {
 }
 
 .badge {
-  border-radius: 999px;
+  border-radius: var(--radius);
   padding: 0.25rem 0.85rem;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.15);
@@ -241,8 +237,8 @@ button:hover {
 
 .badge-success {
   color: var(--success);
-  border-color: rgba(59, 227, 122, 0.5);
-  background: rgba(59, 227, 122, 0.08);
+  border-color: rgba(0, 230, 118, 0.5);
+  background: rgba(0, 230, 118, 0.12);
 }
 
 .badge-muted {
@@ -260,7 +256,7 @@ button:hover {
 .filter-group {
   background: var(--panel-soft);
   padding: 0.85rem;
-  border-radius: 16px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
 }
 
@@ -271,11 +267,10 @@ button:hover {
 }
 
 .event-card {
-  border-radius: 16px;
+  border-radius: var(--radius);
   padding: 1rem;
   border: 1px solid rgba(255, 255, 255, 0.05);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01));
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.01), 0 20px 30px rgba(0, 0, 0, 0.5);
+  background: var(--panel-soft);
 }
 
 .event-meta {
@@ -293,7 +288,7 @@ button:hover {
 }
 
 .event-card button {
-  border-radius: 12px;
+  border-radius: var(--radius);
   border: 1px solid rgba(255, 255, 255, 0.2);
   background: transparent;
   color: var(--text);
@@ -305,11 +300,7 @@ button:hover {
   color: var(--accent);
 }
 
-.backup-grid {
-  display: grid;
-  gap: 1rem;
-}
-
+.backup-grid,
 .backup-actions {
   display: grid;
   gap: 0.6rem;
@@ -318,7 +309,7 @@ button:hover {
 .message {
   margin-top: 0.75rem;
   padding: 0.75rem 1rem;
-  border-radius: 12px;
+  border-radius: var(--radius);
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.03);
   color: var(--muted);
