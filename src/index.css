@@ -131,24 +131,24 @@ textarea:focus-visible {
   background:
     linear-gradient(
       110deg,
-      rgba(255, 59, 48, 0.16),
-      rgba(255, 149, 0, 0.16),
-      rgba(255, 214, 10, 0.16),
-      rgba(52, 199, 89, 0.16),
-      rgba(0, 199, 190, 0.16),
-      rgba(0, 122, 255, 0.16),
-      rgba(175, 82, 222, 0.16)
+      rgba(255, 205, 210, 0.65),
+      rgba(255, 224, 178, 0.65),
+      rgba(255, 249, 196, 0.65),
+      rgba(200, 230, 201, 0.65),
+      rgba(178, 235, 242, 0.65),
+      rgba(187, 222, 251, 0.65),
+      rgba(225, 190, 231, 0.65)
     )
     padding-box,
     linear-gradient(
       110deg,
-      #ff3b30,
-      #ff9500,
-      #ffd60a,
-      #34c759,
-      #00c7be,
-      #007aff,
-      #af52de
+      #ffcdd2,
+      #ffe0b2,
+      #fff9c4,
+      #c8e6c9,
+      #b2ebf2,
+      #bbdefb,
+      #e1bee7
     )
     border-box;
   border-radius: var(--radius-lg);
