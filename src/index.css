@@ -1,17 +1,18 @@
-﻿:root {
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+:root {
   color-scheme: light;
-  --bg: #f6f1e7;
-  --bg-alt: #efe5d7;
+  --bg: #f3fbf6;
+  --bg-alt: #e8f6f0;
   --panel: #ffffff;
-  --ink: #1c1a17;
-  --muted: #5b554d;
-  --accent: #2f6b5f;
-  --accent-2: #d6724b;
-  --border: #e2d6c6;
-  --shadow: 0 20px 50px rgba(27, 24, 19, 0.12);
-  --radius-lg: 24px;
-  --radius-md: 16px;
-  --radius-sm: 10px;
+  --ink: #101416;
+  --muted: #0f3a3a;
+  --accent: #1c8c8c;
+  --accent-2: #f05a4f;
+  --accent-3: #f0c23b;
+  --accent-4: #3a7bd5;
+  --border: #cde6dd;
+  --shadow: 0 12px 28px rgba(16, 30, 30, 0.08);
 }
 
 * {
@@ -20,9 +21,9 @@
 
 body {
   margin: 0;
-  font-family: 'Manrope', sans-serif;
+  font-family: 'Space Grotesk', sans-serif;
   color: var(--ink);
-  background: radial-gradient(circle at top left, #fef8ef 0%, #f6f1e7 45%, #efe3d0 100%);
+  background: linear-gradient(135deg, #f6fff9 0%, #f0fbf8 45%, #eef6ff 100%);
   min-height: 100vh;
 }
 
@@ -33,12 +34,13 @@ body {
 h1,
 h2,
 h3 {
-  font-family: 'Fraunces', serif;
+  font-family: 'Space Grotesk', sans-serif;
+  text-transform: none;
   margin: 0;
 }
 
 p {
-  margin: 0.4rem 0 0;
+  margin: 0.35rem 0 0;
   color: var(--muted);
 }
 
@@ -47,21 +49,21 @@ input,
 select,
 textarea {
   font-family: inherit;
+  border-radius: 0;
 }
 
 button {
-  border: 1px solid transparent;
+  border: 2px solid var(--ink);
   background: var(--panel);
   padding: 0.65rem 1rem;
-  border-radius: 999px;
   cursor: pointer;
   font-weight: 600;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
 button:hover {
   transform: translateY(-1px);
-  box-shadow: 0 8px 18px rgba(20, 18, 14, 0.15);
+  box-shadow: 0 6px 14px rgba(16, 30, 30, 0.12);
 }
 
 button:disabled {
@@ -74,6 +76,7 @@ button:disabled {
 button.primary {
   background: var(--accent);
   color: #fff;
+  border-color: var(--accent);
 }
 
 button.ghost {
@@ -82,7 +85,7 @@ button.ghost {
 }
 
 .app-shell {
-  max-width: 1100px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 2.5rem 1.5rem 4rem;
 }
@@ -94,7 +97,7 @@ button.ghost {
   gap: 1.5rem;
   padding: 1.5rem 2rem;
   background: var(--panel);
-  border-radius: var(--radius-lg);
+  border: 2px solid var(--border);
   box-shadow: var(--shadow);
   position: sticky;
   top: 1rem;
@@ -102,8 +105,8 @@ button.ghost {
 }
 
 .app-title {
-  font-size: 1.9rem;
-  letter-spacing: -0.02em;
+  font-size: 2rem;
+  letter-spacing: -0.01em;
 }
 
 .app-sub {
@@ -118,7 +121,7 @@ button.ghost {
 .panel {
   margin-top: 2rem;
   padding: 2rem;
-  border-radius: var(--radius-lg);
+  border: 2px solid var(--border);
   background: var(--panel);
   box-shadow: var(--shadow);
 }
@@ -146,17 +149,16 @@ button.ghost {
   display: flex;
   align-items: center;
   gap: 1rem;
-  border: 2px solid transparent;
+  border: 2px solid var(--border);
   padding: 1rem;
-  border-radius: var(--radius-md);
-  background: linear-gradient(120deg, #fff 0%, #fef8ef 100%);
+  background: var(--bg-alt);
   text-align: left;
 }
 
 .person-color {
   width: 44px;
   height: 44px;
-  border-radius: 14px;
+  background: var(--accent);
 }
 
 .person-name {
@@ -180,10 +182,8 @@ button.ghost {
   justify-content: space-between;
   gap: 1rem;
   padding: 1rem 1.25rem;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border);
-  background: #fff8ef;
-  text-align: left;
+  border: 2px solid var(--border);
+  background: var(--panel);
 }
 
 .episode-title {
@@ -195,28 +195,15 @@ button.ghost {
   color: var(--muted);
 }
 
-.episode-pill {
-  font-size: 0.75rem;
-  padding: 0.35rem 0.75rem;
-  border-radius: 999px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-
-.episode-pill.open {
-  background: #d5e9e2;
-  color: #1d4f43;
-}
-
-.episode-pill.closed {
-  background: #f6d9cc;
-  color: #873f24;
+.episode-actions {
+  display: flex;
+  gap: 0.5rem;
 }
 
 .section {
   margin-top: 2rem;
   padding-top: 1.5rem;
-  border-top: 1px dashed var(--border);
+  border-top: 2px solid var(--border);
 }
 
 .section-header {
@@ -244,8 +231,7 @@ button.ghost {
 .form-grid select,
 .form-grid textarea {
   padding: 0.6rem 0.7rem;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
+  border: 2px solid var(--border);
   background: #fff;
 }
 
@@ -264,39 +250,58 @@ button.ghost {
 }
 
 .log-row {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 1fr auto;
   gap: 1rem;
-  padding: 0.6rem 0.8rem;
-  border-radius: var(--radius-sm);
-  background: #f7efe4;
+  padding: 0.75rem 0.9rem;
+  border: 2px solid var(--border);
+  background: var(--bg-alt);
   font-size: 0.85rem;
 }
 
-.temp-chart {
-  width: 100%;
-  margin-top: 1rem;
+.log-row strong {
+  display: block;
+  font-size: 0.95rem;
 }
 
-.chart-bg {
-  fill: #f7efe4;
+.log-row span {
+  display: block;
+  margin-top: 0.1rem;
 }
 
-.chart-point {
-  fill: #d6724b;
+.log-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
-.chart-label {
-  font-size: 0.75rem;
-  fill: #6c6156;
+.log-edit {
+  grid-column: 1 / -1;
 }
 
-.chart-empty {
+.log-quick {
+  border: 2px solid var(--accent);
+  padding: 1.5rem;
+  background: #fff;
+  margin-bottom: 2rem;
+}
+
+.log-quick-header {
+  margin-bottom: 1rem;
+}
+
+.log-quick-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+}
+
+.log-form {
+  border: 2px solid var(--border);
   padding: 1rem;
-  border-radius: var(--radius-md);
-  background: #f7efe4;
-  color: var(--muted);
-  margin-top: 1rem;
+  background: var(--bg-alt);
+  display: grid;
+  gap: 0.5rem;
 }
 
 .chip-row {
@@ -307,8 +312,7 @@ button.ghost {
 }
 
 .chip {
-  border-radius: 999px;
-  border: 1px solid var(--border);
+  border: 2px solid var(--border);
   background: #fff;
   padding: 0.35rem 0.85rem;
   font-size: 0.8rem;
@@ -317,7 +321,7 @@ button.ghost {
 .chip.active {
   background: var(--accent);
   color: #fff;
-  border-color: transparent;
+  border-color: var(--accent);
 }
 
 .chip.hint {
@@ -338,6 +342,147 @@ button.ghost {
   gap: 0.75rem;
 }
 
+.tab-bar {
+  display: flex;
+  gap: 0.75rem;
+  border: 2px solid var(--border);
+  padding: 0.5rem;
+  margin: 1.5rem 0;
+}
+
+.tab-bar button {
+  border-color: transparent;
+  background: transparent;
+}
+
+.tab-bar button.active {
+  border-color: var(--ink);
+  background: var(--accent-3);
+}
+
+.log-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.log-block {
+  border: 2px solid var(--border);
+  padding: 1rem;
+  background: #fff;
+}
+
+.temp-chart {
+  width: 100%;
+  margin-top: 1rem;
+}
+
+.chart-bg {
+  fill: #fff;
+  stroke: var(--border);
+  stroke-width: 2px;
+}
+
+.chart-point {
+  fill: var(--accent-2);
+}
+
+.chart-label {
+  font-size: 0.75rem;
+  fill: var(--muted);
+}
+
+.chart-empty {
+  padding: 1rem;
+  border: 2px solid var(--border);
+  background: var(--bg-alt);
+  color: var(--muted);
+  margin-top: 1rem;
+}
+
+.calendar {
+  border: 2px solid var(--border);
+  padding: 1.5rem;
+  background: #fff;
+}
+
+.calendar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.calendar-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0.35rem;
+}
+
+.calendar-weekday {
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  text-align: center;
+  padding: 0.35rem 0;
+  background: var(--bg-alt);
+}
+
+.calendar-cell {
+  min-height: 72px;
+  border: 2px solid var(--border);
+  background: #fff;
+  padding: 0.4rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.calendar-cell.empty {
+  border: none;
+  background: transparent;
+}
+
+.calendar-cell.today {
+  border-color: var(--accent);
+}
+
+.calendar-date {
+  font-weight: 700;
+}
+
+.calendar-marks {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.calendar-dot {
+  width: 6px;
+  height: 6px;
+  display: inline-block;
+  background: var(--accent);
+}
+
+.calendar-dot.fever {
+  background: var(--accent-2);
+}
+
+.calendar-dot.med {
+  background: var(--accent-4);
+}
+
+.calendar-legend {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1rem;
+  font-size: 0.85rem;
+}
+
 .settings-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -346,8 +491,7 @@ button.ghost {
 
 .settings-card {
   padding: 1.5rem;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border);
+  border: 2px solid var(--border);
   background: #fff;
   display: grid;
   gap: 0.75rem;
@@ -356,9 +500,8 @@ button.ghost {
 .wizard {
   margin-bottom: 2rem;
   padding: 1.5rem;
-  border-radius: var(--radius-md);
-  background: #fff8ef;
-  border: 1px dashed var(--border);
+  border: 2px dashed var(--accent);
+  background: #fff;
   display: grid;
   gap: 1rem;
 }
@@ -369,7 +512,7 @@ button.ghost {
   gap: 1rem;
   align-items: center;
   padding: 0.75rem 0;
-  border-top: 1px dashed var(--border);
+  border-top: 2px dashed var(--border);
 }
 
 .wizard-step:first-of-type {
@@ -407,8 +550,8 @@ button.ghost {
 .callout {
   margin-top: 2rem;
   padding: 1.5rem 2rem;
-  background: linear-gradient(120deg, #fff 0%, #f7efe4 100%);
-  border-radius: var(--radius-lg);
+  background: var(--bg-alt);
+  border: 2px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -425,9 +568,9 @@ button.ghost {
 .message {
   margin-top: 1rem;
   padding: 0.75rem 1rem;
-  border-radius: var(--radius-md);
-  background: #f6d9cc;
-  color: #873f24;
+  border: 2px solid var(--accent-2);
+  background: #fff4f0;
+  color: #802b22;
   font-weight: 600;
 }
 
@@ -452,8 +595,7 @@ button.ghost {
   }
 
   .log-row {
-    flex-direction: column;
-    align-items: flex-start;
+    grid-template-columns: 1fr;
   }
 
   .wizard-step {

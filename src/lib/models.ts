@@ -32,7 +32,8 @@ export type Episode = {
 
 export type TempEntry = {
   id: string;
-  episodeId: string;
+  memberId: string;
+  episodeId?: string | null;
   atISO: string;
   tempC: number;
   note: string;
@@ -50,11 +51,23 @@ export type MedCatalogItem = {
 
 export type MedEntry = {
   id: string;
-  episodeId: string;
+  memberId: string;
+  episodeId?: string | null;
   medId: string;
   medName: string;
   doseText: string;
   route?: string;
+  note: string;
+  atISO: string;
+  createdAtISO: string;
+  updatedAtISO: string;
+};
+
+export type SymptomEntry = {
+  id: string;
+  memberId: string;
+  episodeId?: string | null;
+  symptoms: string[];
   note: string;
   atISO: string;
   createdAtISO: string;
@@ -67,6 +80,7 @@ export type LogData = {
   episodes: Episode[];
   temps: TempEntry[];
   meds: MedEntry[];
+  symptoms: SymptomEntry[];
   medCatalog: MedCatalogItem[];
 };
 
@@ -95,6 +109,7 @@ export const emptyLog = (): LogData => ({
   episodes: [],
   temps: [],
   meds: [],
+  symptoms: [],
   medCatalog: []
 });
 
@@ -141,11 +156,14 @@ const normalizeEpisode = (value: Partial<Episode>): Episode => {
   };
 };
 
-const normalizeTemp = (value: Partial<TempEntry>): TempEntry => {
+const normalizeTemp = (value: Partial<TempEntry>, episodeMap: Map<string, string>): TempEntry => {
   const now = nowISO();
+  const episodeId = typeof value.episodeId === 'string' ? value.episodeId : null;
+  const memberFallback = episodeId ? episodeMap.get(episodeId) : undefined;
   return {
     id: asString(value.id, createId()),
-    episodeId: asString(value.episodeId),
+    memberId: asString(value.memberId, memberFallback ?? 'member-1'),
+    episodeId,
     atISO: asString(value.atISO, now),
     tempC: asNumber(value.tempC, 37),
     note: asString(value.note),
@@ -165,15 +183,34 @@ const normalizeMedCatalogItem = (value: Partial<MedCatalogItem>): MedCatalogItem
   };
 };
 
-const normalizeMedEntry = (value: Partial<MedEntry>): MedEntry => {
+const normalizeMedEntry = (value: Partial<MedEntry>, episodeMap: Map<string, string>): MedEntry => {
   const now = nowISO();
+  const episodeId = typeof value.episodeId === 'string' ? value.episodeId : null;
+  const memberFallback = episodeId ? episodeMap.get(episodeId) : undefined;
   return {
     id: asString(value.id, createId()),
-    episodeId: asString(value.episodeId),
+    memberId: asString(value.memberId, memberFallback ?? 'member-1'),
+    episodeId,
     medId: asString(value.medId),
     medName: asString(value.medName, 'Medication'),
     doseText: asString(value.doseText),
     route: asString(value.route),
+    note: asString(value.note),
+    atISO: asString(value.atISO, now),
+    createdAtISO: asString(value.createdAtISO, now),
+    updatedAtISO: asString(value.updatedAtISO, now)
+  };
+};
+
+const normalizeSymptomEntry = (value: Partial<SymptomEntry>, episodeMap: Map<string, string>): SymptomEntry => {
+  const now = nowISO();
+  const episodeId = typeof value.episodeId === 'string' ? value.episodeId : null;
+  const memberFallback = episodeId ? episodeMap.get(episodeId) : undefined;
+  return {
+    id: asString(value.id, createId()),
+    memberId: asString(value.memberId, memberFallback ?? 'member-1'),
+    episodeId,
+    symptoms: asArray<string>(value.symptoms).map((item) => asString(item)).filter(Boolean),
     note: asString(value.note),
     atISO: asString(value.atISO, now),
     createdAtISO: asString(value.createdAtISO, now),
@@ -199,12 +236,15 @@ export const ensureHousehold = (value: unknown): Household => {
 export const ensureLogData = (value: unknown): LogData => {
   if (!value || typeof value !== 'object') return emptyLog();
   const data = value as Partial<LogData>;
+  const episodes = asArray<Partial<Episode>>(data.episodes).map(normalizeEpisode);
+  const episodeMap = new Map<string, string>(episodes.map((episode) => [episode.id, episode.memberId]));
   return {
     schemaVersion: SCHEMA_VERSION,
     lastUpdatedAtISO: asString(data.lastUpdatedAtISO, nowISO()),
-    episodes: asArray<Partial<Episode>>(data.episodes).map(normalizeEpisode),
-    temps: asArray<Partial<TempEntry>>(data.temps).map(normalizeTemp),
-    meds: asArray<Partial<MedEntry>>(data.meds).map(normalizeMedEntry),
+    episodes,
+    temps: asArray<Partial<TempEntry>>(data.temps).map((entry) => normalizeTemp(entry, episodeMap)),
+    meds: asArray<Partial<MedEntry>>(data.meds).map((entry) => normalizeMedEntry(entry, episodeMap)),
+    symptoms: asArray<Partial<SymptomEntry>>(data.symptoms).map((entry) => normalizeSymptomEntry(entry, episodeMap)),
     medCatalog: asArray<Partial<MedCatalogItem>>(data.medCatalog).map(normalizeMedCatalogItem)
   };
 };
@@ -248,5 +288,6 @@ export const mergeLogData = (local: LogData, remote: LogData): LogData => ({
   episodes: mergeById(local.episodes, remote.episodes),
   temps: mergeById(local.temps, remote.temps),
   meds: mergeById(local.meds, remote.meds),
+  symptoms: mergeById(local.symptoms, remote.symptoms),
   medCatalog: mergeById(local.medCatalog, remote.medCatalog)
 });

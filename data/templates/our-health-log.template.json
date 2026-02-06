@@ -4,6 +4,7 @@
   "episodes": [],
   "temps": [],
   "meds": [],
+  "symptoms": [],
   "medCatalog": [
     {
       "id": "med-1",
