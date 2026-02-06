@@ -4705,6 +4705,8 @@ const EpisodeView = ({
 
 
 
+    if (!window.confirm('Delete this illness episode? Entries that link to it will stay in the log.')) return;
+
     await onDeleteEpisode(episode.id);
 
 
@@ -4756,18 +4758,11 @@ const EpisodeView = ({
           <h2>{member?.name ?? 'Episode'}</h2>
 
 
-
           <p>
-
-
 
             Started {formatDate(episode.startedAtISO)}
 
-
-
- {episode.endedAtISO ? ` Â· Closed ${formatDate(episode.endedAtISO)}` : ' Â· Ongoing'}
-
-
+            {episode.endedAtISO ? ` \u00B7 Closed ${formatDate(episode.endedAtISO)}` : ' \u00B7 Ongoing'}
 
           </p>
 
@@ -8448,15 +8443,59 @@ export default function App() {
 
 
 
-        <div>
+        <div className="topbar-head">
 
 
 
-          <div className="app-title">Our Health</div>
+          <div className="topbar-title">
 
 
 
-          <div className="app-sub">Household illness tracking with Drive-backed files.</div>
+            <div className="app-title">Our Health</div>
+
+
+
+            <div className="topbar-status" aria-live="polite">
+
+
+
+              <span className={`status-dot ${drive.connected ? 'online' : 'offline'}`} />
+
+
+
+              <div>
+
+
+
+                <span className="status-label">
+
+
+
+                  {drive.connected ? 'Connected to Drive' : 'Drive not connected'}
+
+
+
+                </span>
+
+
+
+                {driveAccountEmail && <span className="status-email">{driveAccountEmail}</span>}
+
+
+
+                {drive.message && <span className="status-message">{drive.message}</span>}
+
+
+
+              </div>
+
+
+
+            </div>
+
+
+
+          </div>
 
 
 
@@ -8485,6 +8524,38 @@ export default function App() {
 
 
             Settings
+
+
+
+          </button>
+
+
+
+          <button
+
+
+
+            type="button"
+
+
+
+            className="ghost topbar-connect"
+
+
+
+            onClick={handleConnect}
+
+
+
+            disabled={drive.busy}
+
+
+
+          >
+
+
+
+            {drive.busy ? 'Connecting…' : drive.connected ? 'Reconnect' : 'Connect Drive'}
 
 
 
