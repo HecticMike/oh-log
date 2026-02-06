@@ -958,11 +958,11 @@ textarea:focus-visible {
 .calendar-weekday {
   font-weight: 700;
   text-transform: uppercase;
-  font-size: 0.62rem;
+  font-size: 0.55rem;
   letter-spacing: 0.05em;
   text-align: center;
   padding: 0;
-  height: 18px;
+  height: 14px;
   line-height: 1;
   display: flex;
   align-items: center;
@@ -998,13 +998,13 @@ textarea:focus-visible {
     linear-gradient(rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.92)) padding-box,
     linear-gradient(
       110deg,
-      #ff9aa2,
-      #ffb7b2,
-      #ffdac1,
-      #e2f0cb,
-      #b5ead7,
-      #c7ceea,
-      #e2c9ff
+      #ffcdd2,
+      #ffe0b2,
+      #fff9c4,
+      #c8e6c9,
+      #b2ebf2,
+      #bbdefb,
+      #e1bee7
     )
     border-box;
   box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.08);
@@ -1177,8 +1177,8 @@ textarea:focus-visible {
   }
 
   .calendar-weekday {
-    font-size: 0.58rem;
-    height: 16px;
+    font-size: 0.5rem;
+    height: 14px;
   }
 
   .calendar-weekdays {

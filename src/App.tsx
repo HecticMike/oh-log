@@ -223,8 +223,8 @@ type MemberTab = 'logs' | 'calendar' | 'illness' | 'insights';
 const parseMemberTab = (value: string | null): MemberTab | undefined =>
   value === 'logs' || value === 'calendar' || value === 'illness' || value === 'insights' ? value : undefined;
 
-const routeFromHash = () => {
-  const hash = window.location.hash.replace('#', '');
+const routeFromHashString = (rawHash: string) => {
+  const hash = rawHash.replace('#', '');
   if (!hash || hash === 'home') return { page: 'home' } as const;
   if (hash === 'settings') return { page: 'settings' } as const;
 
@@ -243,6 +243,8 @@ const routeFromHash = () => {
 
   return { page: 'home' } as const;
 };
+
+const routeFromHash = () => routeFromHashString(window.location.hash);
 
 
 
@@ -7594,10 +7596,11 @@ export default function App() {
   const navigate = (hash: string) => {
     if (typeof window === 'undefined') return;
     const normalized = hash.startsWith('#') ? hash : `#${hash}`;
+    const nextRoute = routeFromHashString(normalized);
+    setRoute(nextRoute);
     if (window.location.hash !== normalized) {
       window.location.hash = normalized;
     }
-    setRoute(routeFromHash());
   };
 
 
