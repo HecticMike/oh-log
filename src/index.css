@@ -114,7 +114,7 @@ textarea:focus-visible {
 .app-shell {
   width: min(980px, 100%);
   margin: 0 auto;
-  padding: 1rem 1rem 3.5rem;
+  padding: 1rem 1rem 6.5rem;
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
@@ -235,6 +235,52 @@ textarea:focus-visible {
   box-shadow: var(--shadow-soft);
 }
 
+.quick-add {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0.9rem;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-soft);
+}
+
+.quick-add-hint {
+  grid-column: 1 / -1;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.episode-pill {
+  margin-top: 0.4rem;
+  border: 1px solid var(--member-accent-ink, var(--border));
+  color: var(--member-accent-ink, var(--ink));
+  background: rgba(255, 255, 255, 0.8);
+  font-size: 0.7rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  box-shadow: none;
+}
+
+.episode-view {
+  display: grid;
+  gap: 1rem;
+}
+
+.episode-sticky {
+  position: sticky;
+  bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  z-index: 5;
+}
+
+.episode-sticky button {
+  width: 100%;
+}
+
 .person-panel {
   border: 1px solid var(--member-accent-ink, var(--border));
   padding-top: 1.55rem;
@@ -265,6 +311,11 @@ textarea:focus-visible {
   letter-spacing: 0.1em;
   text-transform: uppercase;
   background: rgba(255, 255, 255, 0.6);
+}
+
+.person-panel .quick-add {
+  border-color: var(--member-accent-ink, var(--border));
+  background: var(--member-tint, var(--panel));
 }
 
 .person-panel .panel-header h2 {
@@ -314,6 +365,7 @@ textarea:focus-visible {
 .person-panel .log-row,
 .person-panel .calendar,
 .person-panel .calendar-cell,
+.person-panel .calendar-day-panel,
 .person-panel .episode-card {
   border-color: var(--member-accent-ink, var(--accent));
   background: var(--member-tint, var(--panel));
@@ -505,6 +557,8 @@ textarea:focus-visible {
   background: rgba(255, 255, 255, 0.75);
   font-size: 0.85rem;
   border-radius: var(--radius-sm);
+  position: relative;
+  overflow: hidden;
 }
 
 .log-row strong {
@@ -553,6 +607,20 @@ textarea:focus-visible {
   border-radius: var(--radius-md);
   display: grid;
   gap: 0.65rem;
+}
+
+.temp-nudges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.temp-nudge-label {
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 .chip-row {
@@ -716,6 +784,11 @@ textarea:focus-visible {
   border-radius: var(--radius-sm);
 }
 
+.calendar-cell.selected {
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+
 .calendar-cell.empty {
   border: none;
   background: transparent;
@@ -755,6 +828,80 @@ textarea:focus-visible {
   gap: 1rem;
   margin-top: 1rem;
   font-size: 0.85rem;
+}
+
+.calendar-day-panel {
+  margin-top: 1rem;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: var(--radius-md);
+  padding: 0.9rem;
+  box-shadow: var(--shadow-soft);
+}
+
+.calendar-day-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.6rem;
+}
+
+.calendar-day-list {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.calendar-day-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem 0.8rem;
+  font-size: 0.85rem;
+}
+
+.calendar-day-item span {
+  color: var(--muted);
+}
+
+.calendar-day-section h5 {
+  margin: 0.4rem 0 0.35rem;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 0.55rem 0.9rem calc(0.9rem + env(safe-area-inset-bottom, 0px));
+  background: rgba(255, 255, 255, 0.9);
+  border-top: 1px solid var(--border);
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.45rem;
+  z-index: 30;
+  backdrop-filter: blur(18px);
+}
+
+.bottom-nav button {
+  padding: 0.45rem 0.4rem;
+  font-size: 0.75rem;
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: none;
+  border-color: transparent;
+}
+
+.bottom-nav button.active {
+  background: var(--ink);
+  color: #fff;
+}
+
+.bottom-nav button:disabled {
+  opacity: 0.4;
 }
 
 .settings-grid {
@@ -808,6 +955,10 @@ textarea:focus-visible {
     padding: 0.25rem 0.4rem;
     font-size: 0.75rem;
     min-height: 30px;
+  }
+
+  .quick-add {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -905,6 +1056,18 @@ textarea:focus-visible {
   color: var(--muted);
 }
 
+.empty-state {
+  margin: 0.6rem 0 0.8rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.empty-state .empty {
+  margin: 0;
+}
+
 @media (max-width: 720px) {
   .panel-header {
     flex-direction: column;
@@ -918,6 +1081,22 @@ textarea:focus-visible {
 
   .log-row {
     grid-template-columns: 1fr;
+  }
+
+  .log-row {
+    padding-right: 4.6rem;
+  }
+
+  .log-row > .log-actions {
+    position: absolute;
+    right: 0.6rem;
+    top: 50%;
+    transform: translateY(-50%) translateX(120%);
+    transition: transform 0.2s ease;
+  }
+
+  .log-row.swipe-open > .log-actions {
+    transform: translateY(-50%) translateX(0);
   }
 
   .wizard-step {

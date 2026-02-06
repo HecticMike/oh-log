@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type TouchEvent } from 'react';
 
 import * as XLSX from 'xlsx';
 
@@ -218,34 +218,30 @@ const toISOFromDateTime = (dateValue: string, timeValue: string) => {
   return date.toISOString();
 };
 
+type MemberTab = 'logs' | 'calendar' | 'illness';
+
+const parseMemberTab = (value: string | null): MemberTab | undefined =>
+  value === 'logs' || value === 'calendar' || value === 'illness' ? value : undefined;
+
 const routeFromHash = () => {
-
-
-
   const hash = window.location.hash.replace('#', '');
-
-
-
   if (!hash || hash === 'home') return { page: 'home' } as const;
-
-
-
-  if (hash.startsWith('person=')) return { page: 'person', memberId: hash.replace('person=', '') } as const;
-
-
-
-  if (hash.startsWith('episode=')) return { page: 'episode', episodeId: hash.replace('episode=', '') } as const;
-
-
-
   if (hash === 'settings') return { page: 'settings' } as const;
 
+  if (hash.startsWith('person=')) {
+    const params = new URLSearchParams(hash);
+    const memberId = params.get('person') ?? hash.replace('person=', '').split('&')[0];
+    const tab = parseMemberTab(params.get('tab'));
+    return { page: 'person', memberId, tab } as const;
+  }
 
+  if (hash.startsWith('episode=')) {
+    const params = new URLSearchParams(hash);
+    const episodeId = params.get('episode') ?? hash.replace('episode=', '').split('&')[0];
+    return { page: 'episode', episodeId } as const;
+  }
 
   return { page: 'home' } as const;
-
-
-
 };
 
 
@@ -567,7 +563,9 @@ type LogEntryFormsProps = {
 
   episodes: Episode[];
 
+  temps: TempEntry[];
 
+  symptoms: SymptomEntry[];
 
   meds: MedEntry[];
 
@@ -680,6 +678,10 @@ const LogEntryForms = ({
 
   episodes,
 
+  temps,
+
+  symptoms,
+
 
 
   meds,
@@ -724,7 +726,58 @@ const LogEntryForms = ({
 
   const locked = typeof lockEpisodeId === 'string';
 
+  const ongoingEpisodeId = useMemo(
+    () => episodes.find((episode) => !episode.endedAtISO)?.id ?? null,
+    [episodes]
+  );
 
+  const lastTempEntry = useMemo(() => {
+    if (!temps.length) return null;
+    return (
+      temps
+        .slice()
+        .sort((a: TempEntry, b: TempEntry) => new Date(b.atISO).getTime() - new Date(a.atISO).getTime())[0] ??
+      null
+    );
+  }, [temps]);
+
+  const lastMedEntry = useMemo(() => {
+    if (!meds.length) return null;
+    return (
+      meds
+        .slice()
+        .sort((a: MedEntry, b: MedEntry) => new Date(b.atISO).getTime() - new Date(a.atISO).getTime())[0] ??
+      null
+    );
+  }, [meds]);
+
+  const lastSymptomEntry = useMemo(() => {
+    if (!symptoms.length) return null;
+    return (
+      symptoms
+        .slice()
+        .sort(
+          (a: SymptomEntry, b: SymptomEntry) => new Date(b.atISO).getTime() - new Date(a.atISO).getTime()
+        )[0] ?? null
+    );
+  }, [symptoms]);
+
+  const recentSymptomCombos = useMemo(() => {
+    const combos = new Map<string, string>();
+    const sorted = symptoms
+      .slice()
+      .sort((a: SymptomEntry, b: SymptomEntry) => new Date(b.atISO).getTime() - new Date(a.atISO).getTime());
+    for (const entry of sorted) {
+      const normalized = entry.symptoms.map((item: string) => item.trim().toLowerCase()).filter(Boolean);
+      if (!normalized.length) continue;
+      const key = normalized.join('|');
+      if (!combos.has(key)) {
+        combos.set(key, entry.symptoms.join(', '));
+      }
+      if (combos.size >= 4) break;
+    }
+    return Array.from(combos.values());
+  }, [symptoms]);
 
   const [tempValue, setTempValue] = useState('');
 
@@ -799,22 +852,38 @@ const LogEntryForms = ({
 
 
   useEffect(() => {
+    if (locked) return;
+    setTempEpisodeId(ongoingEpisodeId);
+    setSymptomEpisodeId(ongoingEpisodeId);
+    setMedEpisodeId(ongoingEpisodeId);
+    setTempTime(toLocalTimeInput(nowISO()));
+    setSymptomTime(toLocalTimeInput(nowISO()));
+    setMedTime(toLocalTimeInput(nowISO()));
+  }, [member.id, locked, ongoingEpisodeId]);
 
+  useEffect(() => {
+    if (locked || !ongoingEpisodeId) return;
+    if (!tempEpisodeId) setTempEpisodeId(ongoingEpisodeId);
+    if (!symptomEpisodeId) setSymptomEpisodeId(ongoingEpisodeId);
+    if (!medEpisodeId) setMedEpisodeId(ongoingEpisodeId);
+  }, [locked, ongoingEpisodeId, tempEpisodeId, symptomEpisodeId, medEpisodeId]);
 
-
-    setTempEpisodeId(null);
-
-
-
-    setSymptomEpisodeId(null);
-
-
-
-    setMedEpisodeId(null);
-
-
-
-  }, [member.id]);
+  useEffect(() => {
+    if (lastMedEntry) {
+      setMedName((prev) => prev || lastMedEntry.medName);
+      setMedDose((prev) => prev || lastMedEntry.doseText);
+      setMedRoute((prev) => prev || (lastMedEntry.route ?? ''));
+      if (!selectedMedId) {
+        const match = catalog.find(
+          (item) => item.name.toLowerCase() === lastMedEntry.medName.toLowerCase()
+        );
+        if (match) setSelectedMedId(match.id);
+      }
+    }
+    if (lastSymptomEntry && !symptomText) {
+      setSymptomText(lastSymptomEntry.symptoms.join(', '));
+    }
+  }, [member.id, lastMedEntry, lastSymptomEntry, selectedMedId, symptomText, catalog]);
 
 
 
@@ -920,6 +989,17 @@ const LogEntryForms = ({
 
   }, [medName, catalog]);
 
+  const formatTemp = (value: number) => value.toFixed(1);
+
+  const bumpTemp = (delta: number) => {
+    const parsed = Number(tempValue);
+    const base = Number.isFinite(parsed)
+      ? parsed
+      : lastTempEntry?.tempC ?? FEVER_THRESHOLD;
+    const next = Math.round((base + delta) * 10) / 10;
+    setTempValue(formatTemp(next));
+  };
+
 
 
 
@@ -971,6 +1051,7 @@ const LogEntryForms = ({
 
 
     setTempNote('');
+    setTempTime(toLocalTimeInput(nowISO()));
 
 
 
@@ -1039,6 +1120,7 @@ const LogEntryForms = ({
 
 
     setSymptomNote('');
+    setSymptomTime(toLocalTimeInput(nowISO()));
 
 
 
@@ -1139,6 +1221,7 @@ const LogEntryForms = ({
 
 
     setMedNote('');
+    setMedTime(toLocalTimeInput(nowISO()));
 
 
 
@@ -1211,6 +1294,7 @@ const LogEntryForms = ({
 
 
                 step="0.1"
+                id={`temp-value-${member.id}`}
 
 
 
@@ -1231,6 +1315,31 @@ const LogEntryForms = ({
 
 
             </label>
+
+            <div className="temp-nudges full">
+              <span className="temp-nudge-label">Quick</span>
+              <button type="button" className="chip" onClick={() => setTempValue(formatTemp(FEVER_THRESHOLD))}>
+                {formatTemp(FEVER_THRESHOLD)}
+              </button>
+              <button type="button" className="chip" onClick={() => bumpTemp(0.1)}>
+                +0.1
+              </button>
+              <button type="button" className="chip" onClick={() => bumpTemp(0.5)}>
+                +0.5
+              </button>
+              <button type="button" className="chip" onClick={() => bumpTemp(1)}>
+                +1.0
+              </button>
+              {lastTempEntry && (
+                <button
+                  type="button"
+                  className="chip"
+                  onClick={() => setTempValue(formatTemp(lastTempEntry.tempC))}
+                >
+                  Last {formatTemp(lastTempEntry.tempC)}
+                </button>
+              )}
+            </div>
 
 
 
@@ -1308,7 +1417,20 @@ const LogEntryForms = ({
 
           <h4>Symptoms</h4>
 
-
+          {recentSymptomCombos.length > 0 && (
+            <div className="chip-row">
+              {recentSymptomCombos.map((combo) => (
+                <button
+                  key={combo}
+                  type="button"
+                  className="chip"
+                  onClick={() => setSymptomText(combo)}
+                >
+                  {combo}
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="form-grid">
 
@@ -1326,6 +1448,7 @@ const LogEntryForms = ({
 
 
 
+                id={`symptom-text-${member.id}`}
                 value={symptomText}
 
 
@@ -1582,6 +1705,7 @@ const LogEntryForms = ({
 
 
 
+                id={`med-name-${member.id}`}
                 value={medName}
 
 
@@ -1876,6 +2000,28 @@ const TempLogList = ({ entries, episodes, onUpdate, onDelete }: TempLogListProps
 
   const [editEpisodeId, setEditEpisodeId] = useState<string | null>(null);
 
+  const [swipeOpenId, setSwipeOpenId] = useState<string | null>(null);
+  const swipeStartX = useRef<number | null>(null);
+
+  const handleTouchStart = (event: TouchEvent) => {
+    swipeStartX.current = event.touches[0]?.clientX ?? null;
+  };
+
+  const handleTouchMove = (entryId: string) => (event: TouchEvent) => {
+    if (swipeStartX.current === null) return;
+    const currentX = event.touches[0]?.clientX ?? swipeStartX.current;
+    const delta = currentX - swipeStartX.current;
+    if (delta < -35) {
+      setSwipeOpenId(entryId);
+    } else if (delta > 25) {
+      setSwipeOpenId(null);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    swipeStartX.current = null;
+  };
+
 
 
 
@@ -1907,6 +2053,7 @@ const TempLogList = ({ entries, episodes, onUpdate, onDelete }: TempLogListProps
 
 
     setEditEpisodeId(entry.episodeId ?? null);
+    setSwipeOpenId(null);
 
 
 
@@ -2006,7 +2153,13 @@ const TempLogList = ({ entries, episodes, onUpdate, onDelete }: TempLogListProps
 
 
 
-          <div key={entry.id} className="log-row">
+          <div
+            key={entry.id}
+            className={`log-row ${swipeOpenId === entry.id ? 'swipe-open' : ''}`}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove(entry.id)}
+            onTouchEnd={handleTouchEnd}
+          >
 
 
 
@@ -2150,7 +2303,7 @@ const TempLogList = ({ entries, episodes, onUpdate, onDelete }: TempLogListProps
 
 
 
-                    {formatDate(entry.atISO)} Â· {formatTime(entry.atISO)}
+                    {formatDate(entry.atISO)} - {formatTime(entry.atISO)}
 
 
 
@@ -2316,6 +2469,28 @@ const MedLogList = ({ entries, episodes, onUpdate, onDelete, onUpsertCatalog }: 
 
   const [editEpisodeId, setEditEpisodeId] = useState<string | null>(null);
 
+  const [swipeOpenId, setSwipeOpenId] = useState<string | null>(null);
+  const swipeStartX = useRef<number | null>(null);
+
+  const handleTouchStart = (event: TouchEvent) => {
+    swipeStartX.current = event.touches[0]?.clientX ?? null;
+  };
+
+  const handleTouchMove = (entryId: string) => (event: TouchEvent) => {
+    if (swipeStartX.current === null) return;
+    const currentX = event.touches[0]?.clientX ?? swipeStartX.current;
+    const delta = currentX - swipeStartX.current;
+    if (delta < -35) {
+      setSwipeOpenId(entryId);
+    } else if (delta > 25) {
+      setSwipeOpenId(null);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    swipeStartX.current = null;
+  };
+
 
 
 
@@ -2466,7 +2641,13 @@ const MedLogList = ({ entries, episodes, onUpdate, onDelete, onUpsertCatalog }: 
 
 
 
-          <div key={entry.id} className="log-row">
+          <div
+            key={entry.id}
+            className={`log-row ${swipeOpenId === entry.id ? 'swipe-open' : ''}`}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove(entry.id)}
+            onTouchEnd={handleTouchEnd}
+          >
 
 
 
@@ -2642,7 +2823,7 @@ const MedLogList = ({ entries, episodes, onUpdate, onDelete, onUpsertCatalog }: 
 
 
 
-                    {formatDate(entry.atISO)} Â· {formatTime(entry.atISO)}
+                    {formatDate(entry.atISO)} - {formatTime(entry.atISO)}
 
 
 
@@ -2658,7 +2839,7 @@ const MedLogList = ({ entries, episodes, onUpdate, onDelete, onUpsertCatalog }: 
 
 
 
-                    {entry.route && `Â· ${entry.route}`}
+                    {entry.route && `- ${entry.route}`}
 
 
 
@@ -2812,6 +2993,28 @@ const SymptomLogList = ({ entries, episodes, onUpdate, onDelete }: SymptomLogLis
 
   const [editEpisodeId, setEditEpisodeId] = useState<string | null>(null);
 
+  const [swipeOpenId, setSwipeOpenId] = useState<string | null>(null);
+  const swipeStartX = useRef<number | null>(null);
+
+  const handleTouchStart = (event: TouchEvent) => {
+    swipeStartX.current = event.touches[0]?.clientX ?? null;
+  };
+
+  const handleTouchMove = (entryId: string) => (event: TouchEvent) => {
+    if (swipeStartX.current === null) return;
+    const currentX = event.touches[0]?.clientX ?? swipeStartX.current;
+    const delta = currentX - swipeStartX.current;
+    if (delta < -35) {
+      setSwipeOpenId(entryId);
+    } else if (delta > 25) {
+      setSwipeOpenId(null);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    swipeStartX.current = null;
+  };
+
 
 
 
@@ -2954,7 +3157,13 @@ const SymptomLogList = ({ entries, episodes, onUpdate, onDelete }: SymptomLogLis
 
 
 
-          <div key={entry.id} className="log-row">
+          <div
+            key={entry.id}
+            className={`log-row ${swipeOpenId === entry.id ? 'swipe-open' : ''}`}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove(entry.id)}
+            onTouchEnd={handleTouchEnd}
+          >
 
 
 
@@ -3098,7 +3307,7 @@ const SymptomLogList = ({ entries, episodes, onUpdate, onDelete }: SymptomLogLis
 
 
 
-                    {formatDate(entry.atISO)} Â· {formatTime(entry.atISO)}
+                    {formatDate(entry.atISO)} - {formatTime(entry.atISO)}
 
 
 
@@ -3212,6 +3421,8 @@ const CalendarView = ({ member, temps, meds }: CalendarViewProps) => {
 
   const [month, setMonth] = useState(() => new Date());
 
+  const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
+
 
 
 
@@ -3227,6 +3438,10 @@ const CalendarView = ({ member, temps, meds }: CalendarViewProps) => {
 
 
   }, [member.id]);
+
+  useEffect(() => {
+    setSelectedDateKey(null);
+  }, [member.id, month]);
 
 
 
@@ -3376,6 +3591,30 @@ const CalendarView = ({ member, temps, meds }: CalendarViewProps) => {
 
   const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+  const selectedTemps = useMemo(() => {
+    if (!selectedDateKey) return [];
+    return temps
+      .filter((entry) => toLocalDateKey(entry.atISO) === selectedDateKey)
+      .slice()
+      .sort((a, b) => new Date(a.atISO).getTime() - new Date(b.atISO).getTime());
+  }, [temps, selectedDateKey]);
+
+  const selectedMeds = useMemo(() => {
+    if (!selectedDateKey) return [];
+    return meds
+      .filter((entry) => toLocalDateKey(entry.atISO) === selectedDateKey)
+      .slice()
+      .sort((a, b) => new Date(a.atISO).getTime() - new Date(b.atISO).getTime());
+  }, [meds, selectedDateKey]);
+
+  const selectedLabel = selectedDateKey
+    ? new Date(`${selectedDateKey}T00:00:00`).toLocaleDateString(undefined, {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric'
+      })
+    : '';
+
 
 
 
@@ -3484,10 +3723,21 @@ const CalendarView = ({ member, temps, meds }: CalendarViewProps) => {
 
 
           return (
-
-
-
- <div key={key} className={`calendar-cell ${isToday ? 'today' : ''}`}>
+            <div
+              key={key}
+              className={`calendar-cell ${isToday ? 'today' : ''} ${
+                selectedDateKey === key ? 'selected' : ''
+              }`}
+              role="button"
+              tabIndex={0}
+              onClick={() => setSelectedDateKey(key)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  setSelectedDateKey(key);
+                }
+              }}
+            >
 
 
 
@@ -3525,7 +3775,48 @@ const CalendarView = ({ member, temps, meds }: CalendarViewProps) => {
 
       </div>
 
-
+      {selectedDateKey && (
+        <div className="calendar-day-panel">
+          <div className="calendar-day-header">
+            <h4>{selectedLabel}</h4>
+            <button type="button" className="ghost" onClick={() => setSelectedDateKey(null)}>
+              Close
+            </button>
+          </div>
+          {selectedTemps.length === 0 && selectedMeds.length === 0 && (
+            <p className="empty">No fever or medication entries for this day.</p>
+          )}
+          {selectedTemps.length > 0 && (
+            <div className="calendar-day-section">
+              <h5>Temperatures</h5>
+              <div className="calendar-day-list">
+                {selectedTemps.map((entry) => (
+                  <div key={entry.id} className="calendar-day-item">
+                    <span>{formatTime(entry.atISO)}</span>
+                    <strong>{entry.tempC.toFixed(1)} C</strong>
+                    {entry.note && <span>{entry.note}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {selectedMeds.length > 0 && (
+            <div className="calendar-day-section">
+              <h5>Medication</h5>
+              <div className="calendar-day-list">
+                {selectedMeds.map((entry) => (
+                  <div key={entry.id} className="calendar-day-item">
+                    <span>{formatTime(entry.atISO)}</span>
+                    <strong>{entry.medName}</strong>
+                    <span>{[entry.doseText, entry.route].filter(Boolean).join(' · ')}</span>
+                    {entry.note && <span>{entry.note}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="calendar-legend">
 
@@ -3585,23 +3876,15 @@ type PersonViewProps = {
 
   episodes: Episode[];
 
-
-
   temps: TempEntry[];
-
-
 
   meds: MedEntry[];
 
-
-
   symptoms: SymptomEntry[];
-
-
 
   catalog: MedCatalogItem[];
 
-
+  initialTab?: MemberTab;
 
   onCreateEpisode: (member: Member) => Promise<void>;
 
@@ -3756,6 +4039,10 @@ const PersonView = ({
 
 
 
+  initialTab,
+
+
+
   onCreateEpisode,
 
 
@@ -3836,7 +4123,7 @@ const PersonView = ({
 
 
 
-  const [tab, setTab] = useState<'logs' | 'calendar' | 'illness'>('logs');
+  const [tab, setTab] = useState<MemberTab>(initialTab ?? 'logs');
 
 
 
@@ -3845,14 +4132,8 @@ const PersonView = ({
 
 
   useEffect(() => {
-
-
-
-    setTab('logs');
-
-
-
-  }, [member.id]);
+    setTab(initialTab ?? 'logs');
+  }, [member.id, initialTab]);
 
 
 
@@ -3867,6 +4148,23 @@ const PersonView = ({
         .sort((a, b) => new Date(b.startedAtISO).getTime() - new Date(a.startedAtISO).getTime()),
     [episodes, member.id]
   );
+
+  const ongoingEpisode = useMemo(
+    () => memberEpisodes.find((episode) => !episode.endedAtISO) ?? null,
+    [memberEpisodes]
+  );
+
+  const focusQuickField = (fieldId: string) => {
+    if (typeof document === 'undefined') return;
+    const el = document.getElementById(fieldId) as HTMLInputElement | null;
+    if (el) {
+      el.focus();
+      if (typeof el.select === 'function') {
+        el.select();
+      }
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  };
 
 
 
@@ -3920,6 +4218,15 @@ const PersonView = ({
 
 
           <p className="member-label">Member dashboard</p>
+          {ongoingEpisode && (
+            <button
+              type="button"
+              className="episode-pill"
+              onClick={() => onNavigate(`#episode=${ongoingEpisode.id}`)}
+            >
+              Ongoing: {ongoingEpisode.category}
+            </button>
+          )}
 
 
 
@@ -3935,7 +4242,7 @@ const PersonView = ({
 
 
 
-            Export Excel
+            Export Excel (combined + sheets)
 
 
 
@@ -3967,6 +4274,40 @@ const PersonView = ({
 
 
 
+      <div className="quick-add">
+        <button
+          type="button"
+          className="primary"
+          onClick={() => {
+            setTab('logs');
+            focusQuickField(`temp-value-${member.id}`);
+          }}
+        >
+          + Temp
+        </button>
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => {
+            setTab('logs');
+            focusQuickField(`symptom-text-${member.id}`);
+          }}
+        >
+          + Symptoms
+        </button>
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => {
+            setTab('logs');
+            focusQuickField(`med-name-${member.id}`);
+          }}
+        >
+          + Medication
+        </button>
+        <span className="quick-add-hint">Tap to start a log entry fast.</span>
+      </div>
+
       <LogEntryForms
 
 
@@ -3976,6 +4317,8 @@ const PersonView = ({
 
 
         episodes={memberEpisodes}
+        temps={memberTemps}
+        symptoms={memberSymptoms}
 
 
 
@@ -4019,7 +4362,14 @@ const PersonView = ({
 
 
 
- <button type="button" className={tab === 'logs' ? 'active' : ''} onClick={() => setTab('logs')}>
+ <button
+          type="button"
+          className={tab === 'logs' ? 'active' : ''}
+          onClick={() => {
+            setTab('logs');
+            onNavigate(`#person=${member.id}&tab=logs`);
+          }}
+        >
 
 
 
@@ -4031,7 +4381,14 @@ const PersonView = ({
 
 
 
- <button type="button" className={tab === 'calendar' ? 'active' : ''} onClick={() => setTab('calendar')}>
+ <button
+          type="button"
+          className={tab === 'calendar' ? 'active' : ''}
+          onClick={() => {
+            setTab('calendar');
+            onNavigate(`#person=${member.id}&tab=calendar`);
+          }}
+        >
 
 
 
@@ -4043,7 +4400,14 @@ const PersonView = ({
 
 
 
- <button type="button" className={tab === 'illness' ? 'active' : ''} onClick={() => setTab('illness')}>
+ <button
+          type="button"
+          className={tab === 'illness' ? 'active' : ''}
+          onClick={() => {
+            setTab('illness');
+            onNavigate(`#person=${member.id}&tab=illness`);
+          }}
+        >
 
 
 
@@ -4092,6 +4456,18 @@ const PersonView = ({
 
 
             <TemperatureChart entries={memberTemps} />
+            {memberTemps.length === 0 && (
+              <div className="empty-state">
+                <p className="empty">No temperature entries yet.</p>
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => focusQuickField(`temp-value-${member.id}`)}
+                >
+                  Add first temperature
+                </button>
+              </div>
+            )}
 
 
 
@@ -4122,6 +4498,19 @@ const PersonView = ({
             </div>
 
 
+
+            {memberMeds.length === 0 && (
+              <div className="empty-state">
+                <p className="empty">No medication entries yet.</p>
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => focusQuickField(`med-name-${member.id}`)}
+                >
+                  Add first medication
+                </button>
+              </div>
+            )}
 
             <MedLogList
 
@@ -4174,6 +4563,19 @@ const PersonView = ({
             </div>
 
 
+
+            {memberSymptoms.length === 0 && (
+              <div className="empty-state">
+                <p className="empty">No symptom entries yet.</p>
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => focusQuickField(`symptom-text-${member.id}`)}
+                >
+                  Add first symptoms
+                </button>
+              </div>
+            )}
 
             <SymptomLogList
 
@@ -4719,10 +5121,8 @@ const EpisodeView = ({
 
 
   return (
-
-
-
-    <section className="panel">
+    <div className="episode-view">
+      <section className="panel">
 
 
 
@@ -4984,6 +5384,8 @@ const EpisodeView = ({
 
 
             episodes={episodesForMember}
+            temps={temps.filter((entry) => entry.memberId === member.id)}
+            symptoms={symptoms.filter((entry) => entry.memberId === member.id)}
 
 
 
@@ -5171,7 +5573,13 @@ const EpisodeView = ({
 
 
 
-    </section>
+      </section>
+      <div className="episode-sticky">
+        <button type="button" className="primary" onClick={() => onNavigate(`#person=${episode.memberId}`)}>
+          Back to {member?.name ?? 'member'}
+        </button>
+      </div>
+    </div>
 
 
 
@@ -6088,6 +6496,11 @@ export default function App() {
 
 
   const [folderNotice, setFolderNotice] = useState<string | null>(null);
+  const [lastMemberId, setLastMemberId] = useState<string | null>(null);
+
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
 
 
 
@@ -6251,6 +6664,16 @@ export default function App() {
 
 
 
+  }, []);
+
+  useEffect(() => {
+    const handleStatus = () => setIsOnline(navigator.onLine);
+    window.addEventListener('online', handleStatus);
+    window.addEventListener('offline', handleStatus);
+    return () => {
+      window.removeEventListener('online', handleStatus);
+      window.removeEventListener('offline', handleStatus);
+    };
   }, []);
 
 
@@ -7134,6 +7557,30 @@ export default function App() {
 
 
   const memberMap = useMemo(() => new Map(members.map((member) => [member.id, member])), [members]);
+
+  useEffect(() => {
+    if (route.page === 'person') {
+      setLastMemberId(route.memberId);
+      return;
+    }
+    if (route.page === 'episode') {
+      const episode = episodes.find((item) => item.id === route.episodeId);
+      if (episode) {
+        setLastMemberId(episode.memberId);
+      }
+    }
+  }, [route.page, route.memberId, route.episodeId, episodes]);
+
+  const navMemberId = useMemo(() => {
+    if (route.page === 'person') return route.memberId;
+    if (route.page === 'episode') {
+      return episodes.find((item) => item.id === route.episodeId)?.memberId ?? lastMemberId;
+    }
+    return lastMemberId;
+  }, [route.page, route.memberId, route.episodeId, episodes, lastMemberId]);
+
+  const activeMemberTab: MemberTab | null =
+    route.page === 'person' ? route.tab ?? 'logs' : null;
 
 
 
@@ -8191,11 +8638,13 @@ export default function App() {
 
     if (!member) return <div className="panel">Person not found.</div>;
 
-    return (
+      return (
 
       <PersonView
 
         member={member}
+
+        initialTab={route.tab}
 
         episodes={episodes}
 
@@ -8468,7 +8917,7 @@ export default function App() {
 
 
 
-              <span className={`status-dot ${drive.connected ? 'online' : 'offline'}`} />
+              <span className={`status-dot ${isOnline && drive.connected ? 'online' : 'offline'}`} />
 
 
 
@@ -8480,7 +8929,7 @@ export default function App() {
 
 
 
-                  {drive.connected ? 'Connected to Drive' : 'Drive not connected'}
+                  {isOnline ? (drive.connected ? 'Connected to Drive' : 'Drive not connected') : 'Offline'}
 
 
 
@@ -8492,6 +8941,7 @@ export default function App() {
 
 
 
+                {!isOnline && <span className="status-message">Sync paused while offline.</span>}
                 {drive.message && <span className="status-message">{drive.message}</span>}
 
 
@@ -8552,7 +9002,7 @@ export default function App() {
 
           >
 
-            Reconnect
+            {drive.connected ? 'Reconnect' : 'Connect'}
 
           </button>
 
@@ -8648,7 +9098,38 @@ export default function App() {
 
       {localMessage && <p className="message">{localMessage}</p>}
 
-
+      <nav className="bottom-nav" aria-label="Primary">
+        <button
+          type="button"
+          className={route.page === 'home' ? 'active' : ''}
+          onClick={() => navigate('#home')}
+        >
+          People
+        </button>
+        <button
+          type="button"
+          className={activeMemberTab === 'logs' ? 'active' : ''}
+          onClick={() => navMemberId && navigate(`#person=${navMemberId}&tab=logs`)}
+          disabled={!navMemberId}
+        >
+          Logs
+        </button>
+        <button
+          type="button"
+          className={activeMemberTab === 'calendar' ? 'active' : ''}
+          onClick={() => navMemberId && navigate(`#person=${navMemberId}&tab=calendar`)}
+          disabled={!navMemberId}
+        >
+          Calendar
+        </button>
+        <button
+          type="button"
+          className={route.page === 'settings' ? 'active' : ''}
+          onClick={() => navigate('#settings')}
+        >
+          Settings
+        </button>
+      </nav>
 
     </div>
 
