@@ -658,6 +658,8 @@ type LogEntryFormsProps = {
 
   heading?: string;
 
+  idPrefix?: string;
+
 
 
 };
@@ -716,7 +718,8 @@ const LogEntryForms = ({
 
 
 
-  heading
+  heading,
+  idPrefix
 
 
 
@@ -725,6 +728,8 @@ const LogEntryForms = ({
 
 
   const locked = typeof lockEpisodeId === 'string';
+
+  const fieldPrefix = idPrefix ?? member.id;
 
   const ongoingEpisodeId = useMemo(
     () => episodes.find((episode) => !episode.endedAtISO)?.id ?? null,
@@ -1000,6 +1005,10 @@ const LogEntryForms = ({
     setTempValue(formatTemp(next));
   };
 
+  const tempParsed = Number(tempValue);
+  const tempOutOfRange =
+    tempValue.trim().length > 0 && (!Number.isFinite(tempParsed) || tempParsed < 35 || tempParsed > 42.5);
+
 
 
 
@@ -1231,6 +1240,46 @@ const LogEntryForms = ({
 
   };
 
+  const handleRepeatMed = async () => {
+    if (!lastMedEntry) return;
+    let catalogItem = catalog.find((item) => item.id === lastMedEntry.medId) ?? null;
+    if (!catalogItem) {
+      catalogItem = await onUpsertCatalog(lastMedEntry.medName);
+    }
+    if (!catalogItem) return;
+    await onAddMed(
+      member.id,
+      catalogItem,
+      lastMedEntry.doseText,
+      nowISO(),
+      lastMedEntry.route ?? '',
+      lastMedEntry.note ?? '',
+      locked ? lockEpisodeId : medEpisodeId
+    );
+  };
+
+  const handleRepeatSymptoms = async () => {
+    if (!lastSymptomEntry) return;
+    await onAddSymptom(
+      member.id,
+      lastSymptomEntry.symptoms,
+      nowISO(),
+      lastSymptomEntry.note ?? '',
+      locked ? lockEpisodeId : symptomEpisodeId
+    );
+  };
+
+  const handleRepeatTemp = async () => {
+    if (!lastTempEntry) return;
+    await onAddTemp(
+      member.id,
+      lastTempEntry.tempC,
+      nowISO(),
+      lastTempEntry.note ?? '',
+      locked ? lockEpisodeId : tempEpisodeId
+    );
+  };
+
 
 
 
@@ -1265,7 +1314,7 @@ const LogEntryForms = ({
 
 
 
-        <div className="log-form">
+        <div className="log-form" id={`temp-form-${fieldPrefix}`}>
 
 
 
@@ -1294,7 +1343,7 @@ const LogEntryForms = ({
 
 
                 step="0.1"
-                id={`temp-value-${member.id}`}
+                id={`temp-value-${fieldPrefix}`}
 
 
 
@@ -1340,6 +1389,10 @@ const LogEntryForms = ({
                 </button>
               )}
             </div>
+
+            <p className={`input-hint full ${tempOutOfRange ? 'warning' : ''}`}>
+              Expected range 35.0-42.5 C{tempOutOfRange ? ' (check value)' : ''}.
+            </p>
 
 
 
@@ -1388,14 +1441,13 @@ const LogEntryForms = ({
 
 
             <button type="button" className="primary" onClick={handleTempSubmit}>
-
-
-
               Add temperature
-
-
-
             </button>
+            {lastTempEntry && (
+              <button type="button" className="ghost" onClick={handleRepeatTemp}>
+                Repeat last
+              </button>
+            )}
 
 
 
@@ -1411,7 +1463,7 @@ const LogEntryForms = ({
 
 
 
-        <div className="log-form">
+        <div className="log-form" id={`symptom-form-${fieldPrefix}`}>
 
 
 
@@ -1448,7 +1500,7 @@ const LogEntryForms = ({
 
 
 
-                id={`symptom-text-${member.id}`}
+                id={`symptom-text-${fieldPrefix}`}
                 value={symptomText}
 
 
@@ -1530,14 +1582,13 @@ const LogEntryForms = ({
 
 
             <button type="button" className="primary" onClick={handleSymptomSubmit}>
-
-
-
               Add symptoms
-
-
-
             </button>
+            {lastSymptomEntry && (
+              <button type="button" className="ghost" onClick={handleRepeatSymptoms}>
+                Repeat last
+              </button>
+            )}
 
 
 
@@ -1553,7 +1604,7 @@ const LogEntryForms = ({
 
 
 
-        <div className="log-form">
+        <div className="log-form" id={`med-form-${fieldPrefix}`}>
 
 
 
@@ -1705,7 +1756,7 @@ const LogEntryForms = ({
 
 
 
-                id={`med-name-${member.id}`}
+                id={`med-name-${fieldPrefix}`}
                 value={medName}
 
 
@@ -1815,14 +1866,13 @@ const LogEntryForms = ({
 
 
             <button type="button" className="primary" onClick={handleMedSubmit}>
-
-
-
               Add medication
-
-
-
             </button>
+            {lastMedEntry && (
+              <button type="button" className="ghost" onClick={handleRepeatMed}>
+                Repeat last
+              </button>
+            )}
 
 
 
@@ -1963,18 +2013,37 @@ const TempLogList = ({ entries, episodes, onUpdate, onDelete }: TempLogListProps
 
 
   const sorted = useMemo(
-
-
-
     () => entries.slice().sort((a, b) => new Date(b.atISO).getTime() - new Date(a.atISO).getTime()),
-
-
-
     [entries]
-
-
-
   );
+
+  const [range, setRange] = useState<'today' | '7d' | 'all'>('all');
+
+  const filtered = useMemo(() => {
+    if (range === 'all') return sorted;
+    const todayKey = toLocalDateKey(new Date().toISOString());
+    if (range === 'today') {
+      return sorted.filter((entry) => toLocalDateKey(entry.atISO) === todayKey);
+    }
+    const start = new Date();
+    start.setDate(start.getDate() - 6);
+    start.setHours(0, 0, 0, 0);
+    return sorted.filter((entry) => new Date(entry.atISO) >= start);
+  }, [range, sorted]);
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, TempEntry[]>();
+    filtered.forEach((entry) => {
+      const key = toLocalDateKey(entry.atISO);
+      if (!key) return;
+      const bucket = map.get(key) ?? [];
+      bucket.push(entry);
+      map.set(key, bucket);
+    });
+    return Array.from(map.entries()).sort(
+      (a, b) => new Date(`${b[0]}T00:00:00`).getTime() - new Date(`${a[0]}T00:00:00`).getTime()
+    );
+  }, [filtered]);
 
 
 
@@ -2002,15 +2071,37 @@ const TempLogList = ({ entries, episodes, onUpdate, onDelete }: TempLogListProps
 
   const [swipeOpenId, setSwipeOpenId] = useState<string | null>(null);
   const swipeStartX = useRef<number | null>(null);
+  const longPressTimer = useRef<number | null>(null);
 
-  const handleTouchStart = (event: TouchEvent) => {
+  const clearLongPress = () => {
+    if (longPressTimer.current) {
+      window.clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const startLongPress = (entryId: string) => {
+    clearLongPress();
+    longPressTimer.current = window.setTimeout(() => {
+      if (typeof window === 'undefined') return;
+      if (window.confirm('Delete this entry?')) {
+        onDelete(entryId);
+      }
+    }, 650);
+  };
+
+  const handleTouchStart = (entryId: string) => (event: TouchEvent) => {
     swipeStartX.current = event.touches[0]?.clientX ?? null;
+    startLongPress(entryId);
   };
 
   const handleTouchMove = (entryId: string) => (event: TouchEvent) => {
     if (swipeStartX.current === null) return;
     const currentX = event.touches[0]?.clientX ?? swipeStartX.current;
     const delta = currentX - swipeStartX.current;
+    if (Math.abs(delta) > 8) {
+      clearLongPress();
+    }
     if (delta < -35) {
       setSwipeOpenId(entryId);
     } else if (delta > 25) {
@@ -2020,6 +2111,7 @@ const TempLogList = ({ entries, episodes, onUpdate, onDelete }: TempLogListProps
 
   const handleTouchEnd = () => {
     swipeStartX.current = null;
+    clearLongPress();
   };
 
 
@@ -2117,14 +2209,8 @@ const TempLogList = ({ entries, episodes, onUpdate, onDelete }: TempLogListProps
 
 
 
-  if (sorted.length === 0) {
-
-
-
+  if (entries.length === 0) {
     return <p className="empty">No temperature entries yet.</p>;
-
-
-
   }
 
 
@@ -2134,247 +2220,94 @@ const TempLogList = ({ entries, episodes, onUpdate, onDelete }: TempLogListProps
 
 
   return (
-
-
-
     <div className="log-list">
-
-
-
-      {sorted.map((entry) => {
-
-
-
-        const isEditing = editingId === entry.id;
-
-
-
-        return (
-
-
-
-          <div
-            key={entry.id}
-            className={`log-row ${swipeOpenId === entry.id ? 'swipe-open' : ''}`}
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove(entry.id)}
-            onTouchEnd={handleTouchEnd}
-          >
-
-
-
-            {isEditing ? (
-
-
-
-              <div className="log-edit">
-
-
-
-                <div className="form-grid">
-
-
-
-                  <label>
-
-
-
-                    Temp (C)
-
-
-
-                    <input value={editTemp} onChange={(event) => setEditTemp(event.target.value)} />
-
-
-
-                  </label>
-
-
-
-                  <label>
-
-
-
-                    Date
-
-
-
-                    <input type="date" value={editDate} onChange={(event) => setEditDate(event.target.value)} />
-
-
-
-                  </label>
-
-
-
-                  <label>
-
-
-
-                    Time
-
-
-
-                    <input type="time" value={editTime} onChange={(event) => setEditTime(event.target.value)} />
-
-
-
-                  </label>
-
-
-
-                  <label>
-
-
-
-                    Note
-
-
-
-                    <input value={editNote} onChange={(event) => setEditNote(event.target.value)} />
-
-
-
-                  </label>
-
-
-
-                  <EpisodeLinkSelect episodes={episodes} value={editEpisodeId} onChange={setEditEpisodeId} />
-
-
-
-                </div>
-
-
-
-                <div className="log-actions">
-
-
-
-                  <button type="button" className="primary" onClick={saveEdit}>
-
-
-
-                    Save
-
-
-
-                  </button>
-
-
-
-                  <button type="button" className="ghost" onClick={() => setEditingId(null)}>
-
-
-
-                    Cancel
-
-
-
-                  </button>
-
-
-
-                </div>
-
-
-
+      <div className="log-filters">
+        <button type="button" className={range === 'today' ? 'active' : ''} onClick={() => setRange('today')}>
+          Today
+        </button>
+        <button type="button" className={range === '7d' ? 'active' : ''} onClick={() => setRange('7d')}>
+          7 days
+        </button>
+        <button type="button" className={range === 'all' ? 'active' : ''} onClick={() => setRange('all')}>
+          All
+        </button>
+      </div>
+
+      {grouped.length === 0 && <p className="empty">No entries for this range.</p>}
+
+      {grouped.map(([dateKey, items]) => (
+        <div key={dateKey} className="log-day-group">
+          <div className="log-day">{formatDate(`${dateKey}T00:00:00`)}</div>
+          {items.map((entry) => {
+            const isEditing = editingId === entry.id;
+            return (
+              <div
+                key={entry.id}
+                className={`log-row ${swipeOpenId === entry.id ? 'swipe-open' : ''}`}
+                onTouchStart={handleTouchStart(entry.id)}
+                onTouchMove={handleTouchMove(entry.id)}
+                onTouchEnd={handleTouchEnd}
+                onTouchCancel={handleTouchEnd}
+                onClick={(event) => {
+                  if (isEditing) return;
+                  const target = event.target as HTMLElement;
+                  if (target.closest('button, input, select, textarea, a')) return;
+                  startEdit(entry);
+                }}
+              >
+                {isEditing ? (
+                  <div className="log-edit">
+                    <div className="form-grid">
+                      <label>
+                        Temp (C)
+                        <input value={editTemp} onChange={(event) => setEditTemp(event.target.value)} />
+                      </label>
+                      <label>
+                        Date
+                        <input type="date" value={editDate} onChange={(event) => setEditDate(event.target.value)} />
+                      </label>
+                      <label>
+                        Time
+                        <input type="time" value={editTime} onChange={(event) => setEditTime(event.target.value)} />
+                      </label>
+                      <label>
+                        Note
+                        <input value={editNote} onChange={(event) => setEditNote(event.target.value)} />
+                      </label>
+                      <EpisodeLinkSelect episodes={episodes} value={editEpisodeId} onChange={setEditEpisodeId} />
+                    </div>
+                    <div className="log-actions">
+                      <button type="button" className="primary" onClick={saveEdit}>
+                        Save
+                      </button>
+                      <button type="button" className="ghost" onClick={() => setEditingId(null)}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <strong>{entry.tempC.toFixed(1)} C</strong>
+                      <span>{formatTime(entry.atISO)}</span>
+                      {entry.note && <span>{entry.note}</span>}
+                    </div>
+                    <div className="log-actions">
+                      <button type="button" className="ghost" onClick={() => startEdit(entry)}>
+                        Edit
+                      </button>
+                      <button type="button" className="ghost" onClick={() => onDelete(entry.id)}>
+                        Delete
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
-
-
-
- ) : (
-
-
-
-              <>
-
-
-
-                <div>
-
-
-
-                  <strong>{entry.tempC.toFixed(1)} C</strong>
-
-
-
-                  <span>
-
-
-
-                    {formatDate(entry.atISO)} - {formatTime(entry.atISO)}
-
-
-
-                  </span>
-
-
-
-                  {entry.note && <span>{entry.note}</span>}
-
-
-
-                </div>
-
-
-
-                <div className="log-actions">
-
-
-
-                  <button type="button" className="ghost" onClick={() => startEdit(entry)}>
-
-
-
-                    Edit
-
-
-
-                  </button>
-
-
-
-                  <button type="button" className="ghost" onClick={() => onDelete(entry.id)}>
-
-
-
-                    Delete
-
-
-
-                  </button>
-
-
-
-                </div>
-
-
-
-              </>
-
-
-
-            )}
-
-
-
-          </div>
-
-
-
-        );
-
-
-
-      })}
-
-
-
+            );
+          })}
+        </div>
+      ))}
     </div>
-
-
-
   );
 
 
@@ -2424,18 +2357,37 @@ const MedLogList = ({ entries, episodes, onUpdate, onDelete, onUpsertCatalog }: 
 
 
   const sorted = useMemo(
-
-
-
     () => entries.slice().sort((a, b) => new Date(b.atISO).getTime() - new Date(a.atISO).getTime()),
-
-
-
     [entries]
-
-
-
   );
+
+  const [range, setRange] = useState<'today' | '7d' | 'all'>('all');
+
+  const filtered = useMemo(() => {
+    if (range === 'all') return sorted;
+    const todayKey = toLocalDateKey(new Date().toISOString());
+    if (range === 'today') {
+      return sorted.filter((entry) => toLocalDateKey(entry.atISO) === todayKey);
+    }
+    const start = new Date();
+    start.setDate(start.getDate() - 6);
+    start.setHours(0, 0, 0, 0);
+    return sorted.filter((entry) => new Date(entry.atISO) >= start);
+  }, [range, sorted]);
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, MedEntry[]>();
+    filtered.forEach((entry) => {
+      const key = toLocalDateKey(entry.atISO);
+      if (!key) return;
+      const bucket = map.get(key) ?? [];
+      bucket.push(entry);
+      map.set(key, bucket);
+    });
+    return Array.from(map.entries()).sort(
+      (a, b) => new Date(`${b[0]}T00:00:00`).getTime() - new Date(`${a[0]}T00:00:00`).getTime()
+    );
+  }, [filtered]);
 
 
 
@@ -2471,15 +2423,37 @@ const MedLogList = ({ entries, episodes, onUpdate, onDelete, onUpsertCatalog }: 
 
   const [swipeOpenId, setSwipeOpenId] = useState<string | null>(null);
   const swipeStartX = useRef<number | null>(null);
+  const longPressTimer = useRef<number | null>(null);
 
-  const handleTouchStart = (event: TouchEvent) => {
+  const clearLongPress = () => {
+    if (longPressTimer.current) {
+      window.clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const startLongPress = (entryId: string) => {
+    clearLongPress();
+    longPressTimer.current = window.setTimeout(() => {
+      if (typeof window === 'undefined') return;
+      if (window.confirm('Delete this entry?')) {
+        onDelete(entryId);
+      }
+    }, 650);
+  };
+
+  const handleTouchStart = (entryId: string) => (event: TouchEvent) => {
     swipeStartX.current = event.touches[0]?.clientX ?? null;
+    startLongPress(entryId);
   };
 
   const handleTouchMove = (entryId: string) => (event: TouchEvent) => {
     if (swipeStartX.current === null) return;
     const currentX = event.touches[0]?.clientX ?? swipeStartX.current;
     const delta = currentX - swipeStartX.current;
+    if (Math.abs(delta) > 8) {
+      clearLongPress();
+    }
     if (delta < -35) {
       setSwipeOpenId(entryId);
     } else if (delta > 25) {
@@ -2489,6 +2463,7 @@ const MedLogList = ({ entries, episodes, onUpdate, onDelete, onUpsertCatalog }: 
 
   const handleTouchEnd = () => {
     swipeStartX.current = null;
+    clearLongPress();
   };
 
 
@@ -2605,14 +2580,8 @@ const MedLogList = ({ entries, episodes, onUpdate, onDelete, onUpsertCatalog }: 
 
 
 
-  if (sorted.length === 0) {
-
-
-
+  if (entries.length === 0) {
     return <p className="empty">No medication entries yet.</p>;
-
-
-
   }
 
 
@@ -2622,295 +2591,103 @@ const MedLogList = ({ entries, episodes, onUpdate, onDelete, onUpsertCatalog }: 
 
 
   return (
-
-
-
     <div className="log-list">
-
-
-
-      {sorted.map((entry) => {
-
-
-
-        const isEditing = editingId === entry.id;
-
-
-
-        return (
-
-
-
-          <div
-            key={entry.id}
-            className={`log-row ${swipeOpenId === entry.id ? 'swipe-open' : ''}`}
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove(entry.id)}
-            onTouchEnd={handleTouchEnd}
-          >
-
-
-
-            {isEditing ? (
-
-
-
-              <div className="log-edit">
-
-
-
-                <div className="form-grid">
-
-
-
-                  <label>
-
-
-
-                    Medication
-
-
-
-                    <input value={editName} onChange={(event) => setEditName(event.target.value)} />
-
-
-
-                  </label>
-
-
-
-                  <label>
-
-
-
-                    Dose
-
-
-
-                    <input value={editDose} onChange={(event) => setEditDose(event.target.value)} />
-
-
-
-                  </label>
-
-
-
-                  <label>
-
-
-
-                    Route
-
-
-
-                    <input value={editRoute} onChange={(event) => setEditRoute(event.target.value)} />
-
-
-
-                  </label>
-
-
-
-                  <label>
-
-
-
-                    Date
-
-
-
-                    <input type="date" value={editDate} onChange={(event) => setEditDate(event.target.value)} />
-
-
-
-                  </label>
-
-
-
-                  <label>
-
-
-
-                    Time
-
-
-
-                    <input type="time" value={editTime} onChange={(event) => setEditTime(event.target.value)} />
-
-
-
-                  </label>
-
-
-
-                  <label>
-
-
-
-                    Note
-
-
-
-                    <input value={editNote} onChange={(event) => setEditNote(event.target.value)} />
-
-
-
-                  </label>
-
-
-
-                  <EpisodeLinkSelect episodes={episodes} value={editEpisodeId} onChange={setEditEpisodeId} />
-
-
-
-                </div>
-
-
-
-                <div className="log-actions">
-
-
-
-                  <button type="button" className="primary" onClick={saveEdit}>
-
-
-
-                    Save
-
-
-
-                  </button>
-
-
-
-                  <button type="button" className="ghost" onClick={() => setEditingId(null)}>
-
-
-
-                    Cancel
-
-
-
-                  </button>
-
-
-
-                </div>
-
-
-
+      <div className="log-filters">
+        <button type="button" className={range === 'today' ? 'active' : ''} onClick={() => setRange('today')}>
+          Today
+        </button>
+        <button type="button" className={range === '7d' ? 'active' : ''} onClick={() => setRange('7d')}>
+          7 days
+        </button>
+        <button type="button" className={range === 'all' ? 'active' : ''} onClick={() => setRange('all')}>
+          All
+        </button>
+      </div>
+
+      {grouped.length === 0 && <p className="empty">No entries for this range.</p>}
+
+      {grouped.map(([dateKey, items]) => (
+        <div key={dateKey} className="log-day-group">
+          <div className="log-day">{formatDate(`${dateKey}T00:00:00`)}</div>
+          {items.map((entry) => {
+            const isEditing = editingId === entry.id;
+            return (
+              <div
+                key={entry.id}
+                className={`log-row ${swipeOpenId === entry.id ? 'swipe-open' : ''}`}
+                onTouchStart={handleTouchStart(entry.id)}
+                onTouchMove={handleTouchMove(entry.id)}
+                onTouchEnd={handleTouchEnd}
+                onTouchCancel={handleTouchEnd}
+                onClick={(event) => {
+                  if (isEditing) return;
+                  const target = event.target as HTMLElement;
+                  if (target.closest('button, input, select, textarea, a')) return;
+                  startEdit(entry);
+                }}
+              >
+                {isEditing ? (
+                  <div className="log-edit">
+                    <div className="form-grid">
+                      <label>
+                        Medication
+                        <input value={editName} onChange={(event) => setEditName(event.target.value)} />
+                      </label>
+                      <label>
+                        Dose
+                        <input value={editDose} onChange={(event) => setEditDose(event.target.value)} />
+                      </label>
+                      <label>
+                        Route
+                        <input value={editRoute} onChange={(event) => setEditRoute(event.target.value)} />
+                      </label>
+                      <label>
+                        Date
+                        <input type="date" value={editDate} onChange={(event) => setEditDate(event.target.value)} />
+                      </label>
+                      <label>
+                        Time
+                        <input type="time" value={editTime} onChange={(event) => setEditTime(event.target.value)} />
+                      </label>
+                      <label>
+                        Note
+                        <input value={editNote} onChange={(event) => setEditNote(event.target.value)} />
+                      </label>
+                      <EpisodeLinkSelect episodes={episodes} value={editEpisodeId} onChange={setEditEpisodeId} />
+                    </div>
+                    <div className="log-actions">
+                      <button type="button" className="primary" onClick={saveEdit}>
+                        Save
+                      </button>
+                      <button type="button" className="ghost" onClick={() => setEditingId(null)}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <strong>{entry.medName}</strong>
+                      <span>{formatTime(entry.atISO)}</span>
+                      <span>{[entry.doseText, entry.route].filter(Boolean).join(' - ')}</span>
+                      {entry.note && <span>{entry.note}</span>}
+                    </div>
+                    <div className="log-actions">
+                      <button type="button" className="ghost" onClick={() => startEdit(entry)}>
+                        Edit
+                      </button>
+                      <button type="button" className="ghost" onClick={() => onDelete(entry.id)}>
+                        Delete
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
-
-
-
- ) : (
-
-
-
-              <>
-
-
-
-                <div>
-
-
-
-                  <strong>{entry.medName}</strong>
-
-
-
-                  <span>
-
-
-
-                    {formatDate(entry.atISO)} - {formatTime(entry.atISO)}
-
-
-
-                  </span>
-
-
-
-                  <span>
-
-
-
-                    {entry.doseText && `${entry.doseText} `}
-
-
-
-                    {entry.route && `- ${entry.route}`}
-
-
-
-                  </span>
-
-
-
-                  {entry.note && <span>{entry.note}</span>}
-
-
-
-                </div>
-
-
-
-                <div className="log-actions">
-
-
-
-                  <button type="button" className="ghost" onClick={() => startEdit(entry)}>
-
-
-
-                    Edit
-
-
-
-                  </button>
-
-
-
-                  <button type="button" className="ghost" onClick={() => onDelete(entry.id)}>
-
-
-
-                    Delete
-
-
-
-                  </button>
-
-
-
-                </div>
-
-
-
-              </>
-
-
-
-            )}
-
-
-
-          </div>
-
-
-
-        );
-
-
-
-      })}
-
-
-
+            );
+          })}
+        </div>
+      ))}
     </div>
-
-
-
   );
 
 
@@ -2969,6 +2746,34 @@ const SymptomLogList = ({ entries, episodes, onUpdate, onDelete }: SymptomLogLis
 
   );
 
+  const [range, setRange] = useState<'today' | '7d' | 'all'>('all');
+
+  const filtered = useMemo(() => {
+    if (range === 'all') return sorted;
+    const todayKey = toLocalDateKey(new Date().toISOString());
+    if (range === 'today') {
+      return sorted.filter((entry) => toLocalDateKey(entry.atISO) === todayKey);
+    }
+    const start = new Date();
+    start.setDate(start.getDate() - 6);
+    start.setHours(0, 0, 0, 0);
+    return sorted.filter((entry) => new Date(entry.atISO) >= start);
+  }, [range, sorted]);
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, SymptomEntry[]>();
+    filtered.forEach((entry) => {
+      const key = toLocalDateKey(entry.atISO);
+      if (!key) return;
+      const bucket = map.get(key) ?? [];
+      bucket.push(entry);
+      map.set(key, bucket);
+    });
+    return Array.from(map.entries()).sort(
+      (a, b) => new Date(`${b[0]}T00:00:00`).getTime() - new Date(`${a[0]}T00:00:00`).getTime()
+    );
+  }, [filtered]);
+
 
 
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -2995,15 +2800,37 @@ const SymptomLogList = ({ entries, episodes, onUpdate, onDelete }: SymptomLogLis
 
   const [swipeOpenId, setSwipeOpenId] = useState<string | null>(null);
   const swipeStartX = useRef<number | null>(null);
+  const longPressTimer = useRef<number | null>(null);
 
-  const handleTouchStart = (event: TouchEvent) => {
+  const clearLongPress = () => {
+    if (longPressTimer.current) {
+      window.clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const startLongPress = (entryId: string) => {
+    clearLongPress();
+    longPressTimer.current = window.setTimeout(() => {
+      if (typeof window === 'undefined') return;
+      if (window.confirm('Delete this entry?')) {
+        onDelete(entryId);
+      }
+    }, 650);
+  };
+
+  const handleTouchStart = (entryId: string) => (event: TouchEvent) => {
     swipeStartX.current = event.touches[0]?.clientX ?? null;
+    startLongPress(entryId);
   };
 
   const handleTouchMove = (entryId: string) => (event: TouchEvent) => {
     if (swipeStartX.current === null) return;
     const currentX = event.touches[0]?.clientX ?? swipeStartX.current;
     const delta = currentX - swipeStartX.current;
+    if (Math.abs(delta) > 8) {
+      clearLongPress();
+    }
     if (delta < -35) {
       setSwipeOpenId(entryId);
     } else if (delta > 25) {
@@ -3013,6 +2840,7 @@ const SymptomLogList = ({ entries, episodes, onUpdate, onDelete }: SymptomLogLis
 
   const handleTouchEnd = () => {
     swipeStartX.current = null;
+    clearLongPress();
   };
 
 
@@ -3121,14 +2949,8 @@ const SymptomLogList = ({ entries, episodes, onUpdate, onDelete }: SymptomLogLis
 
 
 
-  if (sorted.length === 0) {
-
-
-
+  if (entries.length === 0) {
     return <p className="empty">No symptom entries yet.</p>;
-
-
-
   }
 
 
@@ -3138,247 +2960,94 @@ const SymptomLogList = ({ entries, episodes, onUpdate, onDelete }: SymptomLogLis
 
 
   return (
-
-
-
     <div className="log-list">
-
-
-
-      {sorted.map((entry) => {
-
-
-
-        const isEditing = editingId === entry.id;
-
-
-
-        return (
-
-
-
-          <div
-            key={entry.id}
-            className={`log-row ${swipeOpenId === entry.id ? 'swipe-open' : ''}`}
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove(entry.id)}
-            onTouchEnd={handleTouchEnd}
-          >
-
-
-
-            {isEditing ? (
-
-
-
-              <div className="log-edit">
-
-
-
-                <div className="form-grid">
-
-
-
-                  <label>
-
-
-
-                    Symptoms
-
-
-
-                    <input value={editSymptoms} onChange={(event) => setEditSymptoms(event.target.value)} />
-
-
-
-                  </label>
-
-
-
-                  <label>
-
-
-
-                    Date
-
-
-
-                    <input type="date" value={editDate} onChange={(event) => setEditDate(event.target.value)} />
-
-
-
-                  </label>
-
-
-
-                  <label>
-
-
-
-                    Time
-
-
-
-                    <input type="time" value={editTime} onChange={(event) => setEditTime(event.target.value)} />
-
-
-
-                  </label>
-
-
-
-                  <label>
-
-
-
-                    Note
-
-
-
-                    <input value={editNote} onChange={(event) => setEditNote(event.target.value)} />
-
-
-
-                  </label>
-
-
-
-                  <EpisodeLinkSelect episodes={episodes} value={editEpisodeId} onChange={setEditEpisodeId} />
-
-
-
-                </div>
-
-
-
-                <div className="log-actions">
-
-
-
-                  <button type="button" className="primary" onClick={saveEdit}>
-
-
-
-                    Save
-
-
-
-                  </button>
-
-
-
-                  <button type="button" className="ghost" onClick={() => setEditingId(null)}>
-
-
-
-                    Cancel
-
-
-
-                  </button>
-
-
-
-                </div>
-
-
-
+      <div className="log-filters">
+        <button type="button" className={range === 'today' ? 'active' : ''} onClick={() => setRange('today')}>
+          Today
+        </button>
+        <button type="button" className={range === '7d' ? 'active' : ''} onClick={() => setRange('7d')}>
+          7 days
+        </button>
+        <button type="button" className={range === 'all' ? 'active' : ''} onClick={() => setRange('all')}>
+          All
+        </button>
+      </div>
+
+      {grouped.length === 0 && <p className="empty">No entries for this range.</p>}
+
+      {grouped.map(([dateKey, items]) => (
+        <div key={dateKey} className="log-day-group">
+          <div className="log-day">{formatDate(`${dateKey}T00:00:00`)}</div>
+          {items.map((entry) => {
+            const isEditing = editingId === entry.id;
+            return (
+              <div
+                key={entry.id}
+                className={`log-row ${swipeOpenId === entry.id ? 'swipe-open' : ''}`}
+                onTouchStart={handleTouchStart(entry.id)}
+                onTouchMove={handleTouchMove(entry.id)}
+                onTouchEnd={handleTouchEnd}
+                onTouchCancel={handleTouchEnd}
+                onClick={(event) => {
+                  if (isEditing) return;
+                  const target = event.target as HTMLElement;
+                  if (target.closest('button, input, select, textarea, a')) return;
+                  startEdit(entry);
+                }}
+              >
+                {isEditing ? (
+                  <div className="log-edit">
+                    <div className="form-grid">
+                      <label>
+                        Symptoms
+                        <input value={editSymptoms} onChange={(event) => setEditSymptoms(event.target.value)} />
+                      </label>
+                      <label>
+                        Date
+                        <input type="date" value={editDate} onChange={(event) => setEditDate(event.target.value)} />
+                      </label>
+                      <label>
+                        Time
+                        <input type="time" value={editTime} onChange={(event) => setEditTime(event.target.value)} />
+                      </label>
+                      <label>
+                        Note
+                        <input value={editNote} onChange={(event) => setEditNote(event.target.value)} />
+                      </label>
+                      <EpisodeLinkSelect episodes={episodes} value={editEpisodeId} onChange={setEditEpisodeId} />
+                    </div>
+                    <div className="log-actions">
+                      <button type="button" className="primary" onClick={saveEdit}>
+                        Save
+                      </button>
+                      <button type="button" className="ghost" onClick={() => setEditingId(null)}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <strong>{entry.symptoms.join(', ')}</strong>
+                      <span>{formatTime(entry.atISO)}</span>
+                      {entry.note && <span>{entry.note}</span>}
+                    </div>
+                    <div className="log-actions">
+                      <button type="button" className="ghost" onClick={() => startEdit(entry)}>
+                        Edit
+                      </button>
+                      <button type="button" className="ghost" onClick={() => onDelete(entry.id)}>
+                        Delete
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
-
-
-
- ) : (
-
-
-
-              <>
-
-
-
-                <div>
-
-
-
-                  <strong>{entry.symptoms.join(', ')}</strong>
-
-
-
-                  <span>
-
-
-
-                    {formatDate(entry.atISO)} - {formatTime(entry.atISO)}
-
-
-
-                  </span>
-
-
-
-                  {entry.note && <span>{entry.note}</span>}
-
-
-
-                </div>
-
-
-
-                <div className="log-actions">
-
-
-
-                  <button type="button" className="ghost" onClick={() => startEdit(entry)}>
-
-
-
-                    Edit
-
-
-
-                  </button>
-
-
-
-                  <button type="button" className="ghost" onClick={() => onDelete(entry.id)}>
-
-
-
-                    Delete
-
-
-
-                  </button>
-
-
-
-                </div>
-
-
-
-              </>
-
-
-
-            )}
-
-
-
-          </div>
-
-
-
-        );
-
-
-
-      })}
-
-
-
+            );
+          })}
+        </div>
+      ))}
     </div>
-
-
-
   );
 
 
@@ -3407,6 +3076,9 @@ type CalendarViewProps = {
 
 
 
+
+
+  onQuickAdd: (type: 'temp' | 'med' | 'symptom') => void;
 };
 
 
@@ -3415,7 +3087,7 @@ type CalendarViewProps = {
 
 
 
-const CalendarView = ({ member, temps, meds }: CalendarViewProps) => {
+const CalendarView = ({ member, temps, meds, onQuickAdd }: CalendarViewProps) => {
 
 
 
@@ -3781,6 +3453,17 @@ const CalendarView = ({ member, temps, meds }: CalendarViewProps) => {
             <h4>{selectedLabel}</h4>
             <button type="button" className="ghost" onClick={() => setSelectedDateKey(null)}>
               Close
+            </button>
+          </div>
+          <div className="calendar-day-actions">
+            <button type="button" className="ghost" onClick={() => onQuickAdd('temp')}>
+              Add temp
+            </button>
+            <button type="button" className="ghost" onClick={() => onQuickAdd('symptom')}>
+              Add symptoms
+            </button>
+            <button type="button" className="ghost" onClick={() => onQuickAdd('med')}>
+              Add medication
             </button>
           </div>
           {selectedTemps.length === 0 && selectedMeds.length === 0 && (
@@ -4154,16 +3837,42 @@ const PersonView = ({
     [memberEpisodes]
   );
 
-  const focusQuickField = (fieldId: string) => {
+  const focusQuickField = (
+    fieldId: string,
+    options?: { scrollId?: string; allowFocus?: boolean }
+  ) => {
     if (typeof document === 'undefined') return;
+    const scrollTarget = options?.scrollId ? document.getElementById(options.scrollId) : null;
     const el = document.getElementById(fieldId) as HTMLInputElement | null;
-    if (el) {
+    const target = scrollTarget ?? el;
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    const allowFocus = options?.allowFocus ?? true;
+    const smallScreen = typeof window !== 'undefined' && window.innerWidth <= 480;
+    if (el && allowFocus && !smallScreen) {
       el.focus();
       if (typeof el.select === 'function') {
         el.select();
       }
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
+  };
+
+  const handleQuickAdd = (type: 'temp' | 'symptom' | 'med') => {
+    setTab('logs');
+    onNavigate(`#person=${member.id}&tab=logs`);
+    if (type === 'temp') {
+      focusQuickField(`temp-value-${member.id}`, {
+        scrollId: `temp-form-${member.id}`,
+        allowFocus: false
+      });
+      return;
+    }
+    if (type === 'symptom') {
+      focusQuickField(`symptom-text-${member.id}`, { scrollId: `symptom-form-${member.id}` });
+      return;
+    }
+    focusQuickField(`med-name-${member.id}`, { scrollId: `med-form-${member.id}` });
   };
 
 
@@ -4280,7 +3989,10 @@ const PersonView = ({
           className="primary"
           onClick={() => {
             setTab('logs');
-            focusQuickField(`temp-value-${member.id}`);
+            focusQuickField(`temp-value-${member.id}`, {
+              scrollId: `temp-form-${member.id}`,
+              allowFocus: false
+            });
           }}
         >
           + Temp
@@ -4290,7 +4002,7 @@ const PersonView = ({
           className="ghost"
           onClick={() => {
             setTab('logs');
-            focusQuickField(`symptom-text-${member.id}`);
+            focusQuickField(`symptom-text-${member.id}`, { scrollId: `symptom-form-${member.id}` });
           }}
         >
           + Symptoms
@@ -4300,7 +4012,7 @@ const PersonView = ({
           className="ghost"
           onClick={() => {
             setTab('logs');
-            focusQuickField(`med-name-${member.id}`);
+            focusQuickField(`med-name-${member.id}`, { scrollId: `med-form-${member.id}` });
           }}
         >
           + Medication
@@ -4462,7 +4174,12 @@ const PersonView = ({
                 <button
                   type="button"
                   className="ghost"
-                  onClick={() => focusQuickField(`temp-value-${member.id}`)}
+                  onClick={() =>
+                    focusQuickField(`temp-value-${member.id}`, {
+                      scrollId: `temp-form-${member.id}`,
+                      allowFocus: false
+                    })
+                  }
                 >
                   Add first temperature
                 </button>
@@ -4617,7 +4334,9 @@ const PersonView = ({
 
 
 
-      {tab === 'calendar' && <CalendarView member={member} temps={memberTemps} meds={memberMeds} />}
+      {tab === 'calendar' && (
+        <CalendarView member={member} temps={memberTemps} meds={memberMeds} onQuickAdd={handleQuickAdd} />
+      )}
 
 
 
@@ -5114,6 +4833,36 @@ const EpisodeView = ({
 
   const episodeSymptoms = symptoms.filter((entry) => entry.episodeId === episode.id && !entry.deletedAtISO);
 
+  const episodeFieldPrefix = `${episode.memberId}-${episode.id}`;
+
+  const focusEpisodeField = (type: 'temp' | 'symptom' | 'med') => {
+    if (typeof document === 'undefined') return;
+    const fieldId =
+      type === 'temp'
+        ? `temp-value-${episodeFieldPrefix}`
+        : type === 'symptom'
+        ? `symptom-text-${episodeFieldPrefix}`
+        : `med-name-${episodeFieldPrefix}`;
+    const scrollId =
+      type === 'temp'
+        ? `temp-form-${episodeFieldPrefix}`
+        : type === 'symptom'
+        ? `symptom-form-${episodeFieldPrefix}`
+        : `med-form-${episodeFieldPrefix}`;
+    const scrollTarget = document.getElementById(scrollId) ?? document.getElementById(fieldId);
+    if (scrollTarget) {
+      scrollTarget.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    if (type === 'temp') return;
+    const el = document.getElementById(fieldId) as HTMLInputElement | null;
+    if (el) {
+      el.focus();
+      if (typeof el.select === 'function') {
+        el.select();
+      }
+    }
+  };
+
 
 
 
@@ -5368,8 +5117,18 @@ const EpisodeView = ({
 
 
         <div className="section">
-
-
+          <div className="quick-add episode-quick-add">
+            <button type="button" className="primary" onClick={() => focusEpisodeField('temp')}>
+              + Temp
+            </button>
+            <button type="button" className="ghost" onClick={() => focusEpisodeField('symptom')}>
+              + Symptoms
+            </button>
+            <button type="button" className="ghost" onClick={() => focusEpisodeField('med')}>
+              + Medication
+            </button>
+            <span className="quick-add-hint">Quick add to this illness.</span>
+          </div>
 
           <LogEntryForms
 
@@ -5418,6 +5177,7 @@ const EpisodeView = ({
 
 
             lockEpisodeId={episode.id}
+            idPrefix={episodeFieldPrefix}
 
 
 
@@ -6502,6 +6262,9 @@ export default function App() {
     typeof navigator !== 'undefined' ? navigator.onLine : true
   );
 
+  const [saveToast, setSaveToast] = useState<string | null>(null);
+  const saveToastTimer = useRef<number | null>(null);
+
 
 
 
@@ -7499,6 +7262,18 @@ export default function App() {
 
 
       setLastSyncISO(nowISO());
+
+      if (saveToastTimer.current) {
+        window.clearTimeout(saveToastTimer.current);
+      }
+      setSaveToast('Saved');
+      saveToastTimer.current = window.setTimeout(() => setSaveToast(null), 1500);
+
+      if (saveToastTimer.current) {
+        window.clearTimeout(saveToastTimer.current);
+      }
+      setSaveToast('Saved');
+      saveToastTimer.current = window.setTimeout(() => setSaveToast(null), 1500);
 
 
 
@@ -8500,6 +8275,27 @@ export default function App() {
 
   const hasFiles = householdReady && logReady;
 
+  const getMemberLastActivityISO = (memberId: string): string | null => {
+    const candidates: string[] = [];
+    episodes
+      .filter((episode) => episode.memberId === memberId && !episode.deletedAtISO)
+      .forEach((episode) => {
+        candidates.push(episode.startedAtISO);
+        if (episode.endedAtISO) candidates.push(episode.endedAtISO);
+      });
+    temps
+      .filter((entry) => entry.memberId === memberId && !entry.deletedAtISO)
+      .forEach((entry) => candidates.push(entry.atISO));
+    meds
+      .filter((entry) => entry.memberId === memberId && !entry.deletedAtISO)
+      .forEach((entry) => candidates.push(entry.atISO));
+    symptoms
+      .filter((entry) => entry.memberId === memberId && !entry.deletedAtISO)
+      .forEach((entry) => candidates.push(entry.atISO));
+    if (!candidates.length) return null;
+    return candidates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null;
+  };
+
 
 
 
@@ -8554,7 +8350,9 @@ export default function App() {
 
 
 
-        {members.map((member) => (
+        {members.map((member) => {
+          const lastISO = getMemberLastActivityISO(member.id);
+          return (
 
 
 
@@ -8601,6 +8399,9 @@ export default function App() {
               <div className="person-sub">
                 Episodes: {episodes.filter((ep) => ep.memberId === member.id && !ep.deletedAtISO).length}
               </div>
+              <div className="person-sub">
+                {lastISO ? `Last log: ${formatDateTime(lastISO)}` : 'No logs yet'}
+              </div>
 
 
 
@@ -8612,7 +8413,8 @@ export default function App() {
 
 
 
-        ))}
+          );
+        })}
 
 
 
@@ -9097,6 +8899,8 @@ export default function App() {
 
 
       {localMessage && <p className="message">{localMessage}</p>}
+
+      {saveToast && <div className="save-toast" role="status">{saveToast}</div>}
 
       <nav className="bottom-nav" aria-label="Primary">
         <button
