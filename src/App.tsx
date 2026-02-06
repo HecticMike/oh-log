@@ -7593,11 +7593,11 @@ export default function App() {
 
   const navigate = (hash: string) => {
     if (typeof window === 'undefined') return;
-    if (window.location.hash === hash) {
-      setRoute(routeFromHash());
-    } else {
-      window.location.hash = hash;
+    const normalized = hash.startsWith('#') ? hash : `#${hash}`;
+    if (window.location.hash !== normalized) {
+      window.location.hash = normalized;
     }
+    setRoute(routeFromHash());
   };
 
 
@@ -9041,51 +9041,14 @@ export default function App() {
 
 
         <div className="topbar-actions">
-
-
-
-          <button type="button" className="ghost" onClick={() => navigate('#home')}>
-
-
-
-            Home
-
-
-
-          </button>
-
-
-
-          <button type="button" className="ghost" onClick={() => navigate('#settings')}>
-
-
-
-            Settings
-
-
-
-          </button>
-
-
-
           <button
-
             type="button"
-
             className="ghost topbar-connect"
-
             onClick={handleConnect}
-
             disabled={drive.busy}
-
           >
-
             {drive.connected ? 'Reconnect' : 'Connect'}
-
           </button>
-
-
-
         </div>
 
 
