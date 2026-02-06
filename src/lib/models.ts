@@ -118,7 +118,7 @@ export const emptyLog = (): LogData => ({
 });
 
 export const defaultAccent = (index: number) => {
-  const palette = ['#2F6B5F', '#D6724B', '#C6A24A', '#4B6EA8'];
+  const palette = ['#f9c5d1', '#fee3c7', '#fff6a5', '#d5e8d4', '#b2ebf2', '#c5d7ff', '#e2c9ff'];
   return palette[index % palette.length];
 };
 

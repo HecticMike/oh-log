@@ -5,28 +5,28 @@
     {
       "id": "member-1",
       "name": "Member 1",
-      "accentColor": "#2F6B5F",
+      "accentColor": "#f9c5d1",
       "createdAtISO": "2026-01-01T00:00:00.000Z",
       "updatedAtISO": "2026-01-01T00:00:00.000Z"
     },
     {
       "id": "member-2",
       "name": "Member 2",
-      "accentColor": "#D6724B",
+      "accentColor": "#fee3c7",
       "createdAtISO": "2026-01-01T00:00:00.000Z",
       "updatedAtISO": "2026-01-01T00:00:00.000Z"
     },
     {
       "id": "member-3",
       "name": "Member 3",
-      "accentColor": "#C6A24A",
+      "accentColor": "#fff6a5",
       "createdAtISO": "2026-01-01T00:00:00.000Z",
       "updatedAtISO": "2026-01-01T00:00:00.000Z"
     },
     {
       "id": "member-4",
       "name": "Member 4",
-      "accentColor": "#4B6EA8",
+      "accentColor": "#d5e8d4",
       "createdAtISO": "2026-01-01T00:00:00.000Z",
       "updatedAtISO": "2026-01-01T00:00:00.000Z"
     }

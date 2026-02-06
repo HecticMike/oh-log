@@ -3409,29 +3409,21 @@ const CalendarView = ({ member, temps, meds, onQuickAdd }: CalendarViewProps) =>
 
 
 
-      <div className="calendar-grid">
-
-
+      <div className="calendar-weekdays">
 
         {weekDays.map((day) => (
 
-
-
           <div key={day} className="calendar-weekday">
-
-
 
             {day}
 
-
-
           </div>
-
-
 
         ))}
 
+      </div>
 
+      <div className="calendar-grid">
 
         {days.map((day, index) => {
 
@@ -3494,6 +3486,7 @@ const CalendarView = ({ member, temps, meds, onQuickAdd }: CalendarViewProps) =>
 
 
               </div>
+
 
 
 
@@ -6382,43 +6375,29 @@ const SettingsView = ({
 
               <div key={member.id} className="member-row">
 
-
-
                 <input
-
-
 
                   value={member.name}
 
-
-
                   onChange={(event) => updateDraft(index, { name: event.target.value })}
 
-
-
                 />
 
+                <div className="member-color-field">
 
+                  <input
 
-                <input
+                    type="color"
 
+                    value={member.accentColor}
 
+                    onChange={(event) => updateDraft(index, { accentColor: event.target.value })}
 
-                  type="color"
+                  />
 
+                  <span className="member-color-preview" style={{ backgroundColor: member.accentColor }} />
 
-
-                  value={member.accentColor}
-
-
-
-                  onChange={(event) => updateDraft(index, { accentColor: event.target.value })}
-
-
-
-                />
-
-
+                </div>
 
               </div>
 
@@ -7613,13 +7592,12 @@ export default function App() {
 
 
   const navigate = (hash: string) => {
-
-
-
-    window.location.hash = hash;
-
-
-
+    if (typeof window === 'undefined') return;
+    if (window.location.hash === hash) {
+      setRoute(routeFromHash());
+    } else {
+      window.location.hash = hash;
+    }
   };
 
 
