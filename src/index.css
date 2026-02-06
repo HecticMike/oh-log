@@ -97,11 +97,11 @@ button.ghost {
 
 .topbar {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 1rem;
-  padding: calc(0.5rem + env(safe-area-inset-top, 0.5rem)) clamp(1rem, 3vw, 2rem);
+  gap: 0.75rem;
+  padding: calc(0.35rem + env(safe-area-inset-top, 0.3rem)) clamp(0.75rem, 3vw, 1.25rem);
   background: var(--panel);
   border: 2px solid var(--border);
   box-shadow: var(--shadow);
@@ -112,15 +112,8 @@ button.ghost {
 
 .topbar-head {
   display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  min-width: 0;
-}
-
-.topbar-title {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
+  align-items: center;
+  gap: 0.75rem;
   min-width: 0;
 }
 
@@ -132,10 +125,9 @@ button.ghost {
 .topbar-status {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
-  font-size: 0.78rem;
+  gap: 0.5rem;
+  font-size: 0.72rem;
   color: var(--muted);
-  white-space: nowrap;
   min-width: 0;
 }
 
@@ -177,15 +169,21 @@ button.ghost {
 .topbar-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: 0.45rem;
   align-items: center;
+}
+
+.topbar-actions button {
+  padding: 0.35rem 0.85rem;
+  min-height: 34px;
+  font-size: 0.85rem;
 }
 
 .topbar-connect {
   border-color: transparent;
   background: var(--accent-3);
   color: #111;
-  padding: 0.55rem 1rem;
+  padding: 0.45rem 0.95rem;
   font-size: 0.85rem;
   font-weight: 600;
   text-transform: uppercase;
@@ -202,6 +200,40 @@ button.ghost {
   border: 2px solid var(--border);
   background: var(--panel);
   box-shadow: var(--shadow);
+}
+
+.person-panel {
+  border-top-width: 6px;
+  border-top-style: solid;
+  border-top-color: var(--member-accent, var(--accent));
+  padding-top: 1.25rem;
+  position: relative;
+}
+
+.person-panel .panel-header h2 {
+  color: var(--member-accent, var(--accent));
+}
+
+.person-panel .panel-header p {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.75rem;
+}
+
+.person-panel .panel-actions button {
+  border-color: var(--member-accent, var(--accent));
+  color: var(--member-accent, var(--accent));
+  background: transparent;
+}
+
+.person-panel .panel-actions .primary {
+  background: transparent;
+}
+
+.person-panel .log-actions button.primary {
+  border-color: var(--member-accent, var(--accent));
+  background: var(--member-accent, var(--accent));
+  color: #111;
 }
 
 .panel-header {
@@ -269,8 +301,35 @@ button.ghost {
 }
 
 .episode-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
   font-size: 0.85rem;
   color: var(--muted);
+}
+
+.episode-meta {
+  font-weight: 500;
+}
+
+.episode-meta.episode-status {
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.episode-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.episode-status {
+  font-weight: 600;
+  text-transform: uppercase;
 }
 
 .episode-actions {
@@ -358,28 +417,28 @@ button.ghost {
 }
 
 .log-quick {
-  border: 2px solid var(--accent);
-  padding: 1.5rem;
-  background: #fff;
-  margin-bottom: 2rem;
+  border-left: 4px solid var(--accent-2);
+  padding: 0.5rem 0.5rem 1rem;
+  background: transparent;
+  margin-bottom: 1.5rem;
 }
 
 .log-quick-header {
-  margin-bottom: 1rem;
+  margin-bottom: 0.6rem;
 }
 
 .log-quick-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 1rem;
+  gap: 0.85rem;
 }
 
 .log-form {
   border: 2px solid var(--border);
-  padding: 1rem;
+  padding: 0.9rem;
   background: var(--bg-alt);
   display: grid;
-  gap: 0.5rem;
+  gap: 0.65rem;
 }
 
 .chip-row {
@@ -732,4 +791,9 @@ button.ghost {
     grid-template-columns: 1fr;
     align-items: flex-start;
   }
+}
+.status-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
 }

@@ -1,71 +1,24 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-
-
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 
 import * as XLSX from 'xlsx';
 
-
-
 import './index.css';
 
-
-
 import {
-
-
-
   createId,
-
-
-
   emptyHousehold,
-
-
-
   emptyLog,
-
-
-
+  ensureLogData,
   mergeById,
-
-
-
   nowISO,
-
-
-
   type Episode,
-
-
-
   type Household,
-
-
-
   type LogData,
-
-
-
   type MedCatalogItem,
-
-
-
   type MedEntry,
-
-
-
   type Member,
-
-
-
   type SymptomEntry,
-
-
-
   type TempEntry
-
-
-
 } from './lib/models';
 
 
@@ -3838,6 +3791,19 @@ const PersonView = ({
 
 
 
+  const accentStyle: CSSProperties = { '--member-accent': member.accentColor } as CSSProperties;
+
+  const handleEpisodeDelete = (episodeId: string) => {
+    if (
+      typeof window !== 'undefined' &&
+      !window.confirm('Delete this illness episode? Linked logs will remain but lose their association.')
+    )
+      return;
+    onDeleteEpisode(episodeId);
+  };
+
+
+
   const [tab, setTab] = useState<'logs' | 'calendar' | 'illness'>('logs');
 
 
@@ -3926,7 +3892,7 @@ const PersonView = ({
 
 
 
-    <section className="panel person-panel">
+    <section className="panel person-panel" style={accentStyle}>
 
 
 
@@ -4300,11 +4266,13 @@ const PersonView = ({
 
                 <div className="episode-sub">
 
+                  <span className="episode-meta">Severity {episode.severity}</span>
 
+                  <span className="episode-meta episode-status">
 
- Severity {episode.severity} Â· {episode.endedAtISO ? `Closed ${formatDate(episode.endedAtISO)}` : 'Ongoing'}
+                    {episode.endedAtISO ? `Closed ${formatDate(episode.endedAtISO)}` : 'Ongoing'}
 
-
+                  </span>
 
                 </div>
 
@@ -4330,7 +4298,7 @@ const PersonView = ({
 
 
 
-                <button type="button" className="ghost" onClick={() => onDeleteEpisode(episode.id)}>
+                <button type="button" className="ghost" onClick={() => handleEpisodeDelete(episode.id)}>
 
 
 
@@ -4758,11 +4726,15 @@ const EpisodeView = ({
           <h2>{member?.name ?? 'Episode'}</h2>
 
 
-          <p>
+          <p className="episode-info">
 
-            Started {formatDate(episode.startedAtISO)}
+            <span>Started {formatDate(episode.startedAtISO)}</span>
 
-            {episode.endedAtISO ? ` \u00B7 Closed ${formatDate(episode.endedAtISO)}` : ' \u00B7 Ongoing'}
+            <span className="episode-status">
+
+              {episode.endedAtISO ? `Closed ${formatDate(episode.endedAtISO)}` : 'Ongoing'}
+
+            </span>
 
           </p>
 
@@ -7072,7 +7044,15 @@ export default function App() {
 
 
 
-      const next = updater({ ...logState.data, lastUpdatedAtISO: nowISO() });
+      const currentData = ensureLogData(logState.data);
+
+
+
+      const next = ensureLogData(updater({ ...currentData, lastUpdatedAtISO: nowISO() }));
+
+
+
+      setLogState((prev) => (prev ? { ...prev, data: next } : prev));
 
 
 
@@ -8447,7 +8427,7 @@ export default function App() {
 
 
 
-          <div className="topbar-title">
+          <div>
 
 
 
@@ -8463,7 +8443,7 @@ export default function App() {
 
 
 
-              <div>
+              <div className="status-copy">
 
 
 
