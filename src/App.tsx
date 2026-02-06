@@ -166,7 +166,7 @@ const parseHexColor = (hex: string) => {
   return [120, 120, 120] as const;
 };
 
-const toMemberTint = (hex: string, alpha = 0.12) => {
+const toMemberTint = (hex: string, alpha = 0.16) => {
   const [r, g, b] = parseHexColor(hex);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 };
@@ -521,7 +521,7 @@ const EpisodeLinkSelect = ({ episodes, value, onChange, disabled = false }: Epis
 
 
 
-      {episodes.map((episode) => (
+      {episodes.filter((episode) => !episode.deletedAtISO).map((episode) => (
 
 
 
@@ -529,7 +529,7 @@ const EpisodeLinkSelect = ({ episodes, value, onChange, disabled = false }: Epis
 
 
 
-          {episode.category} Â· {formatDate(episode.startedAtISO)}
+          {episode.category} - {formatDate(episode.startedAtISO)}
 
 
 
@@ -8151,7 +8151,9 @@ export default function App() {
 
 
 
-              <div className="person-sub">Episodes: {episodes.filter((ep) => ep.memberId === member.id).length}</div>
+              <div className="person-sub">
+                Episodes: {episodes.filter((ep) => ep.memberId === member.id && !ep.deletedAtISO).length}
+              </div>
 
 
 

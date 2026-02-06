@@ -133,20 +133,20 @@ const asNumber = (value: unknown, fallback = 0): number =>
 
 const asArray = <T>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : []);
 
-const normalizeMember = (value: Partial<Member>, index: number): Member => {
-  const now = nowISO();
+const normalizeMember = (value: Partial<Member>, index: number, fallbackISO: string): Member => {
+  const now = fallbackISO || nowISO();
   const id = asString(value.id, `member-${index + 1}`);
   const name = asString(value.name, `Member ${index + 1}`);
   const accentColor = asString(value.accentColor, defaultAccent(index));
-  const createdAtISO = asString(value.createdAtISO, now);
+  const createdAtISO = asString(value.createdAtISO, asString(value.updatedAtISO, now));
   const updatedAtISO = asString(value.updatedAtISO, createdAtISO);
   return { id, name, accentColor, createdAtISO, updatedAtISO };
 };
 
-const normalizeEpisode = (value: Partial<Episode>): Episode => {
-  const now = nowISO();
+const normalizeEpisode = (value: Partial<Episode>, fallbackISO: string): Episode => {
+  const now = fallbackISO || nowISO();
   const endedAtISO = typeof value.endedAtISO === 'string' ? value.endedAtISO : value.endedAtISO === null ? null : null;
-  const createdAtISO = asString(value.createdAtISO, now);
+  const createdAtISO = asString(value.createdAtISO, asString(value.updatedAtISO, now));
   const updatedAtISO = asString(value.updatedAtISO, createdAtISO);
   const deletedAtISO = typeof value.deletedAtISO === 'string' ? value.deletedAtISO : value.deletedAtISO === null ? null : null;
   return {
@@ -164,11 +164,11 @@ const normalizeEpisode = (value: Partial<Episode>): Episode => {
   };
 };
 
-const normalizeTemp = (value: Partial<TempEntry>, episodeMap: Map<string, string>): TempEntry => {
-  const now = nowISO();
+const normalizeTemp = (value: Partial<TempEntry>, episodeMap: Map<string, string>, fallbackISO: string): TempEntry => {
+  const now = fallbackISO || nowISO();
   const episodeId = typeof value.episodeId === 'string' ? value.episodeId : null;
   const memberFallback = episodeId ? episodeMap.get(episodeId) : undefined;
-  const createdAtISO = asString(value.createdAtISO, now);
+  const createdAtISO = asString(value.createdAtISO, asString(value.updatedAtISO, now));
   const updatedAtISO = asString(value.updatedAtISO, createdAtISO);
   const deletedAtISO = typeof value.deletedAtISO === 'string' ? value.deletedAtISO : value.deletedAtISO === null ? null : null;
   return {
@@ -184,22 +184,24 @@ const normalizeTemp = (value: Partial<TempEntry>, episodeMap: Map<string, string
   };
 };
 
-const normalizeMedCatalogItem = (value: Partial<MedCatalogItem>): MedCatalogItem => {
-  const now = nowISO();
+const normalizeMedCatalogItem = (value: Partial<MedCatalogItem>, fallbackISO: string): MedCatalogItem => {
+  const now = fallbackISO || nowISO();
+  const createdAtISO = asString(value.createdAtISO, asString(value.updatedAtISO, now));
+  const updatedAtISO = asString(value.updatedAtISO, createdAtISO);
   return {
     id: asString(value.id, createId()),
     name: asString(value.name, 'Medication'),
     isFavorite: asBoolean(value.isFavorite, false),
-    createdAtISO: asString(value.createdAtISO, now),
-    updatedAtISO: asString(value.updatedAtISO, now)
+    createdAtISO,
+    updatedAtISO
   };
 };
 
-const normalizeMedEntry = (value: Partial<MedEntry>, episodeMap: Map<string, string>): MedEntry => {
-  const now = nowISO();
+const normalizeMedEntry = (value: Partial<MedEntry>, episodeMap: Map<string, string>, fallbackISO: string): MedEntry => {
+  const now = fallbackISO || nowISO();
   const episodeId = typeof value.episodeId === 'string' ? value.episodeId : null;
   const memberFallback = episodeId ? episodeMap.get(episodeId) : undefined;
-  const createdAtISO = asString(value.createdAtISO, now);
+  const createdAtISO = asString(value.createdAtISO, asString(value.updatedAtISO, now));
   const updatedAtISO = asString(value.updatedAtISO, createdAtISO);
   const deletedAtISO = typeof value.deletedAtISO === 'string' ? value.deletedAtISO : value.deletedAtISO === null ? null : null;
   return {
@@ -218,11 +220,15 @@ const normalizeMedEntry = (value: Partial<MedEntry>, episodeMap: Map<string, str
   };
 };
 
-const normalizeSymptomEntry = (value: Partial<SymptomEntry>, episodeMap: Map<string, string>): SymptomEntry => {
-  const now = nowISO();
+const normalizeSymptomEntry = (
+  value: Partial<SymptomEntry>,
+  episodeMap: Map<string, string>,
+  fallbackISO: string
+): SymptomEntry => {
+  const now = fallbackISO || nowISO();
   const episodeId = typeof value.episodeId === 'string' ? value.episodeId : null;
   const memberFallback = episodeId ? episodeMap.get(episodeId) : undefined;
-  const createdAtISO = asString(value.createdAtISO, now);
+  const createdAtISO = asString(value.createdAtISO, asString(value.updatedAtISO, now));
   const updatedAtISO = asString(value.updatedAtISO, createdAtISO);
   const deletedAtISO = typeof value.deletedAtISO === 'string' ? value.deletedAtISO : value.deletedAtISO === null ? null : null;
   return {
@@ -242,13 +248,14 @@ export const ensureHousehold = (value: unknown): Household => {
   const fallback = emptyHousehold();
   if (!value || typeof value !== 'object') return fallback;
   const data = value as Partial<Household>;
+  const householdUpdatedAtISO = asString(data.lastUpdatedAtISO, nowISO());
   const membersRaw = asArray<Partial<Member>>(data.members);
   const members = Array.from({ length: MEMBER_SLOTS }, (_, index) =>
-    normalizeMember(membersRaw[index] ?? {}, index)
+    normalizeMember(membersRaw[index] ?? {}, index, householdUpdatedAtISO)
   );
   return {
     schemaVersion: SCHEMA_VERSION,
-    lastUpdatedAtISO: asString(data.lastUpdatedAtISO, nowISO()),
+    lastUpdatedAtISO: householdUpdatedAtISO,
     members
   };
 };
@@ -256,16 +263,27 @@ export const ensureHousehold = (value: unknown): Household => {
 export const ensureLogData = (value: unknown): LogData => {
   if (!value || typeof value !== 'object') return emptyLog();
   const data = value as Partial<LogData>;
-  const episodes = asArray<Partial<Episode>>(data.episodes).map(normalizeEpisode);
+  const logUpdatedAtISO = asString(data.lastUpdatedAtISO, nowISO());
+  const episodes = asArray<Partial<Episode>>(data.episodes).map((episode) =>
+    normalizeEpisode(episode, logUpdatedAtISO)
+  );
   const episodeMap = new Map<string, string>(episodes.map((episode) => [episode.id, episode.memberId]));
   return {
     schemaVersion: SCHEMA_VERSION,
-    lastUpdatedAtISO: asString(data.lastUpdatedAtISO, nowISO()),
+    lastUpdatedAtISO: logUpdatedAtISO,
     episodes,
-    temps: asArray<Partial<TempEntry>>(data.temps).map((entry) => normalizeTemp(entry, episodeMap)),
-    meds: asArray<Partial<MedEntry>>(data.meds).map((entry) => normalizeMedEntry(entry, episodeMap)),
-    symptoms: asArray<Partial<SymptomEntry>>(data.symptoms).map((entry) => normalizeSymptomEntry(entry, episodeMap)),
-    medCatalog: asArray<Partial<MedCatalogItem>>(data.medCatalog).map(normalizeMedCatalogItem)
+    temps: asArray<Partial<TempEntry>>(data.temps).map((entry) =>
+      normalizeTemp(entry, episodeMap, logUpdatedAtISO)
+    ),
+    meds: asArray<Partial<MedEntry>>(data.meds).map((entry) =>
+      normalizeMedEntry(entry, episodeMap, logUpdatedAtISO)
+    ),
+    symptoms: asArray<Partial<SymptomEntry>>(data.symptoms).map((entry) =>
+      normalizeSymptomEntry(entry, episodeMap, logUpdatedAtISO)
+    ),
+    medCatalog: asArray<Partial<MedCatalogItem>>(data.medCatalog).map((item) =>
+      normalizeMedCatalogItem(item, logUpdatedAtISO)
+    )
   };
 };
 
@@ -311,12 +329,13 @@ export const mergeById = <T extends { id: string; updatedAtISO?: string | null; 
 
 export const mergeHousehold = (local: Household, remote: Household): Household => {
   const mergedMembers = mergeById(local.members, remote.members);
+  const mergedUpdatedAtISO = nowISO();
   const members = Array.from({ length: MEMBER_SLOTS }, (_, index) =>
-    normalizeMember(mergedMembers[index] ?? mergedMembers[0] ?? {}, index)
+    normalizeMember(mergedMembers[index] ?? mergedMembers[0] ?? {}, index, mergedUpdatedAtISO)
   );
   return {
     schemaVersion: SCHEMA_VERSION,
-    lastUpdatedAtISO: nowISO(),
+    lastUpdatedAtISO: mergedUpdatedAtISO,
     members
   };
 };
