@@ -149,6 +149,34 @@ const toLocalDateKey = (iso?: string | null) => {
   return `${year}-${month}-${day}`;
 };
 
+const parseHexColor = (hex: string) => {
+  const clean = hex.replace('#', '').trim();
+  if (clean.length === 3) {
+    const r = parseInt(clean[0] + clean[0], 16);
+    const g = parseInt(clean[1] + clean[1], 16);
+    const b = parseInt(clean[2] + clean[2], 16);
+    return [r, g, b] as const;
+  }
+  if (clean.length === 6) {
+    const r = parseInt(clean.slice(0, 2), 16);
+    const g = parseInt(clean.slice(2, 4), 16);
+    const b = parseInt(clean.slice(4, 6), 16);
+    return [r, g, b] as const;
+  }
+  return [120, 120, 120] as const;
+};
+
+const toMemberTint = (hex: string, alpha = 0.12) => {
+  const [r, g, b] = parseHexColor(hex);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
+const toMemberInk = (hex: string) => {
+  const [r, g, b] = parseHexColor(hex);
+  const ink = (value: number) => Math.max(0, Math.min(255, Math.round(value * 0.8)));
+  return `rgb(${ink(r)}, ${ink(g)}, ${ink(b)})`;
+};
+
 const toLocalDateInput = (iso?: string | null) => {
   if (!iso) return '';
   const date = new Date(iso);
@@ -3791,7 +3819,11 @@ const PersonView = ({
 
 
 
-  const accentStyle: CSSProperties = { '--member-accent': member.accentColor } as CSSProperties;
+  const accentStyle: CSSProperties = {
+    '--member-accent': member.accentColor,
+    '--member-tint': toMemberTint(member.accentColor),
+    '--member-accent-ink': toMemberInk(member.accentColor)
+  } as CSSProperties;
 
   const handleEpisodeDelete = (episodeId: string) => {
     if (
@@ -3829,29 +3861,11 @@ const PersonView = ({
 
 
   const memberEpisodes = useMemo(
-
-
-
     () =>
-
-
-
       episodes
-
-
-
-        .filter((episode) => episode.memberId === member.id)
-
-
-
+        .filter((episode) => episode.memberId === member.id && !episode.deletedAtISO)
         .sort((a, b) => new Date(b.startedAtISO).getTime() - new Date(a.startedAtISO).getTime()),
-
-
-
     [episodes, member.id]
-
-
-
   );
 
 
@@ -3860,26 +3874,23 @@ const PersonView = ({
 
 
 
-  const memberTemps = useMemo(() => temps.filter((entry) => entry.memberId === member.id), [temps, member.id]);
+  const memberTemps = useMemo(
+    () => temps.filter((entry) => entry.memberId === member.id && !entry.deletedAtISO),
+    [temps, member.id]
+  );
 
 
 
-  const memberMeds = useMemo(() => meds.filter((entry) => entry.memberId === member.id), [meds, member.id]);
+  const memberMeds = useMemo(
+    () => meds.filter((entry) => entry.memberId === member.id && !entry.deletedAtISO),
+    [meds, member.id]
+  );
 
 
 
   const memberSymptoms = useMemo(
-
-
-
-    () => symptoms.filter((entry) => entry.memberId === member.id),
-
-
-
+    () => symptoms.filter((entry) => entry.memberId === member.id && !entry.deletedAtISO),
     [symptoms, member.id]
-
-
-
   );
 
 
@@ -3908,7 +3919,7 @@ const PersonView = ({
 
 
 
-          <p style={{ color: member.accentColor }}>Member dashboard</p>
+          <p className="member-label">Member dashboard</p>
 
 
 
@@ -4691,15 +4702,15 @@ const EpisodeView = ({
 
 
 
-  const episodeTemps = temps.filter((entry) => entry.episodeId === episode.id);
+  const episodeTemps = temps.filter((entry) => entry.episodeId === episode.id && !entry.deletedAtISO);
 
 
 
-  const episodeMeds = meds.filter((entry) => entry.episodeId === episode.id);
+  const episodeMeds = meds.filter((entry) => entry.episodeId === episode.id && !entry.deletedAtISO);
 
 
 
-  const episodeSymptoms = symptoms.filter((entry) => entry.episodeId === episode.id);
+  const episodeSymptoms = symptoms.filter((entry) => entry.episodeId === episode.id && !entry.deletedAtISO);
 
 
 
@@ -7510,11 +7521,15 @@ export default function App() {
 
     if (!logState) return;
 
+    const now = nowISO();
+
     await updateLog((current) => ({
 
       ...current,
 
-      temps: current.temps.filter((entry) => entry.id !== entryId)
+      temps: current.temps.map((entry) =>
+        entry.id === entryId ? { ...entry, deletedAtISO: now, updatedAtISO: now } : entry
+      )
 
     }));
 
@@ -7526,11 +7541,15 @@ export default function App() {
 
     if (!logState) return;
 
+    const now = nowISO();
+
     await updateLog((current) => ({
 
       ...current,
 
-      meds: current.meds.filter((entry) => entry.id !== entryId)
+      meds: current.meds.map((entry) =>
+        entry.id === entryId ? { ...entry, deletedAtISO: now, updatedAtISO: now } : entry
+      )
 
     }));
 
@@ -7542,11 +7561,15 @@ export default function App() {
 
     if (!logState) return;
 
+    const now = nowISO();
+
     await updateLog((current) => ({
 
       ...current,
 
-      symptoms: current.symptoms.filter((entry) => entry.id !== entryId)
+      symptoms: current.symptoms.map((entry) =>
+        entry.id === entryId ? { ...entry, deletedAtISO: now, updatedAtISO: now } : entry
+      )
 
     }));
 
@@ -7564,7 +7587,9 @@ export default function App() {
 
       ...current,
 
-      episodes: current.episodes.filter((episode) => episode.id !== episodeId),
+      episodes: current.episodes.map((episode) =>
+        episode.id === episodeId ? { ...episode, deletedAtISO: now, updatedAtISO: now } : episode
+      ),
 
       temps: current.temps.map((entry) =>
         entry.episodeId === episodeId ? { ...entry, episodeId: null, updatedAtISO: now } : entry
@@ -7714,13 +7739,13 @@ export default function App() {
 
   const exportMemberToExcel = (member: Member) => {
 
-    const memberEpisodes = episodes.filter((episode) => episode.memberId === member.id);
+    const memberEpisodes = episodes.filter((episode) => episode.memberId === member.id && !episode.deletedAtISO);
 
-    const memberTemps = temps.filter((entry) => entry.memberId === member.id);
+    const memberTemps = temps.filter((entry) => entry.memberId === member.id && !entry.deletedAtISO);
 
-    const memberMeds = meds.filter((entry) => entry.memberId === member.id);
+    const memberMeds = meds.filter((entry) => entry.memberId === member.id && !entry.deletedAtISO);
 
-    const memberSymptoms = symptoms.filter((entry) => entry.memberId === member.id);
+    const memberSymptoms = symptoms.filter((entry) => entry.memberId === member.id && !entry.deletedAtISO);
 
 
 
@@ -8220,7 +8245,7 @@ export default function App() {
 
   const renderEpisode = (episodeId: string) => {
 
-    const episode = episodes.find((item) => item.id === episodeId);
+    const episode = episodes.find((item) => item.id === episodeId && !item.deletedAtISO);
 
     if (!episode) return <div className="panel">Episode not found.</div>;
 
@@ -8228,7 +8253,9 @@ export default function App() {
 
     if (!member) return <div className="panel">Member not found.</div>;
 
-    const episodesForMember = episodes.filter((item) => item.memberId === episode.memberId);
+    const episodesForMember = episodes.filter(
+      (item) => item.memberId === episode.memberId && !item.deletedAtISO
+    );
 
     return (
 
@@ -8513,31 +8540,17 @@ export default function App() {
 
           <button
 
-
-
             type="button"
-
-
 
             className="ghost topbar-connect"
 
-
-
             onClick={handleConnect}
-
-
 
             disabled={drive.busy}
 
-
-
           >
 
-
-
-            {drive.busy ? 'Connecting…' : drive.connected ? 'Reconnect' : 'Connect Drive'}
-
-
+            Reconnect
 
           </button>
 

@@ -28,6 +28,7 @@ export type Episode = {
   endedAtISO?: string | null;
   createdAtISO: string;
   updatedAtISO: string;
+  deletedAtISO?: string | null;
 };
 
 export type TempEntry = {
@@ -39,6 +40,7 @@ export type TempEntry = {
   note: string;
   createdAtISO: string;
   updatedAtISO: string;
+  deletedAtISO?: string | null;
 };
 
 export type MedCatalogItem = {
@@ -61,6 +63,7 @@ export type MedEntry = {
   atISO: string;
   createdAtISO: string;
   updatedAtISO: string;
+  deletedAtISO?: string | null;
 };
 
 export type SymptomEntry = {
@@ -72,6 +75,7 @@ export type SymptomEntry = {
   atISO: string;
   createdAtISO: string;
   updatedAtISO: string;
+  deletedAtISO?: string | null;
 };
 
 export type LogData = {
@@ -142,6 +146,9 @@ const normalizeMember = (value: Partial<Member>, index: number): Member => {
 const normalizeEpisode = (value: Partial<Episode>): Episode => {
   const now = nowISO();
   const endedAtISO = typeof value.endedAtISO === 'string' ? value.endedAtISO : value.endedAtISO === null ? null : null;
+  const createdAtISO = asString(value.createdAtISO, now);
+  const updatedAtISO = asString(value.updatedAtISO, createdAtISO);
+  const deletedAtISO = typeof value.deletedAtISO === 'string' ? value.deletedAtISO : value.deletedAtISO === null ? null : null;
   return {
     id: asString(value.id, createId()),
     memberId: asString(value.memberId),
@@ -151,8 +158,9 @@ const normalizeEpisode = (value: Partial<Episode>): Episode => {
     notes: asString(value.notes),
     startedAtISO: asString(value.startedAtISO, now),
     endedAtISO,
-    createdAtISO: asString(value.createdAtISO, now),
-    updatedAtISO: asString(value.updatedAtISO, now)
+    createdAtISO,
+    updatedAtISO,
+    deletedAtISO
   };
 };
 
@@ -160,6 +168,9 @@ const normalizeTemp = (value: Partial<TempEntry>, episodeMap: Map<string, string
   const now = nowISO();
   const episodeId = typeof value.episodeId === 'string' ? value.episodeId : null;
   const memberFallback = episodeId ? episodeMap.get(episodeId) : undefined;
+  const createdAtISO = asString(value.createdAtISO, now);
+  const updatedAtISO = asString(value.updatedAtISO, createdAtISO);
+  const deletedAtISO = typeof value.deletedAtISO === 'string' ? value.deletedAtISO : value.deletedAtISO === null ? null : null;
   return {
     id: asString(value.id, createId()),
     memberId: asString(value.memberId, memberFallback ?? 'member-1'),
@@ -167,8 +178,9 @@ const normalizeTemp = (value: Partial<TempEntry>, episodeMap: Map<string, string
     atISO: asString(value.atISO, now),
     tempC: asNumber(value.tempC, 37),
     note: asString(value.note),
-    createdAtISO: asString(value.createdAtISO, now),
-    updatedAtISO: asString(value.updatedAtISO, now)
+    createdAtISO,
+    updatedAtISO,
+    deletedAtISO
   };
 };
 
@@ -187,6 +199,9 @@ const normalizeMedEntry = (value: Partial<MedEntry>, episodeMap: Map<string, str
   const now = nowISO();
   const episodeId = typeof value.episodeId === 'string' ? value.episodeId : null;
   const memberFallback = episodeId ? episodeMap.get(episodeId) : undefined;
+  const createdAtISO = asString(value.createdAtISO, now);
+  const updatedAtISO = asString(value.updatedAtISO, createdAtISO);
+  const deletedAtISO = typeof value.deletedAtISO === 'string' ? value.deletedAtISO : value.deletedAtISO === null ? null : null;
   return {
     id: asString(value.id, createId()),
     memberId: asString(value.memberId, memberFallback ?? 'member-1'),
@@ -197,8 +212,9 @@ const normalizeMedEntry = (value: Partial<MedEntry>, episodeMap: Map<string, str
     route: asString(value.route),
     note: asString(value.note),
     atISO: asString(value.atISO, now),
-    createdAtISO: asString(value.createdAtISO, now),
-    updatedAtISO: asString(value.updatedAtISO, now)
+    createdAtISO,
+    updatedAtISO,
+    deletedAtISO
   };
 };
 
@@ -206,6 +222,9 @@ const normalizeSymptomEntry = (value: Partial<SymptomEntry>, episodeMap: Map<str
   const now = nowISO();
   const episodeId = typeof value.episodeId === 'string' ? value.episodeId : null;
   const memberFallback = episodeId ? episodeMap.get(episodeId) : undefined;
+  const createdAtISO = asString(value.createdAtISO, now);
+  const updatedAtISO = asString(value.updatedAtISO, createdAtISO);
+  const deletedAtISO = typeof value.deletedAtISO === 'string' ? value.deletedAtISO : value.deletedAtISO === null ? null : null;
   return {
     id: asString(value.id, createId()),
     memberId: asString(value.memberId, memberFallback ?? 'member-1'),
@@ -213,8 +232,9 @@ const normalizeSymptomEntry = (value: Partial<SymptomEntry>, episodeMap: Map<str
     symptoms: asArray<string>(value.symptoms).map((item) => asString(item)).filter(Boolean),
     note: asString(value.note),
     atISO: asString(value.atISO, now),
-    createdAtISO: asString(value.createdAtISO, now),
-    updatedAtISO: asString(value.updatedAtISO, now)
+    createdAtISO,
+    updatedAtISO,
+    deletedAtISO
   };
 };
 
@@ -249,9 +269,10 @@ export const ensureLogData = (value: unknown): LogData => {
   };
 };
 
-const updatedAtValue = (value?: string) => (value ? new Date(value).getTime() : 0);
+const updatedAtValue = (value?: string | null) => (value ? new Date(value).getTime() : 0);
+const deletedAtValue = (value?: string | null) => (value ? new Date(value).getTime() : 0);
 
-export const mergeById = <T extends { id: string; updatedAtISO?: string }>(
+export const mergeById = <T extends { id: string; updatedAtISO?: string | null; deletedAtISO?: string | null }>(
   left: T[],
   right: T[]
 ): T[] => {
@@ -265,6 +286,24 @@ export const mergeById = <T extends { id: string; updatedAtISO?: string }>(
     }
     const leftUpdated = updatedAtValue(item.updatedAtISO);
     const rightUpdated = updatedAtValue(existing.updatedAtISO);
+    const leftDeleted = deletedAtValue(item.deletedAtISO);
+    const rightDeleted = deletedAtValue(existing.deletedAtISO);
+
+    if (leftDeleted || rightDeleted) {
+      if (leftDeleted && rightDeleted) {
+        map.set(item.id, leftDeleted >= rightDeleted ? item : existing);
+        return;
+      }
+      if (leftDeleted && leftDeleted >= rightUpdated) {
+        map.set(item.id, item);
+        return;
+      }
+      if (rightDeleted && rightDeleted >= leftUpdated) {
+        map.set(item.id, existing);
+        return;
+      }
+    }
+
     map.set(item.id, leftUpdated >= rightUpdated ? item : existing);
   });
   return Array.from(map.values());

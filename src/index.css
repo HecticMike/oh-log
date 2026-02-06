@@ -2,17 +2,17 @@
 
 :root {
   color-scheme: light;
-  --bg: #f3fbf6;
-  --bg-alt: #e8f6f0;
-  --panel: #ffffff;
-  --ink: #101416;
-  --muted: #0f3a3a;
-  --accent: #1c8c8c;
-  --accent-2: #f05a4f;
-  --accent-3: #f0c23b;
-  --accent-4: #3a7bd5;
-  --border: #cde6dd;
-  --shadow: 0 12px 28px rgba(16, 30, 30, 0.08);
+  --bg: #f1f3f5;
+  --bg-alt: #e9edf2;
+  --panel: #f7f8fa;
+  --ink: #0f1317;
+  --muted: #4a4f55;
+  --accent: #cfd4da;
+  --accent-2: #c0c6cd;
+  --accent-3: #dde1e6;
+  --accent-4: #b8bec6;
+  --border: #d4d8de;
+  --shadow: 0 10px 24px rgba(15, 20, 24, 0.06);
 }
 
 * {
@@ -23,7 +23,7 @@ body {
   margin: 0;
   font-family: 'Space Grotesk', sans-serif;
   color: var(--ink);
-  background: linear-gradient(135deg, #f6fff9 0%, #f0fbf8 45%, #eef6ff 100%);
+  background: var(--bg);
   min-height: 100vh;
   overflow-x: hidden;
   padding-bottom: env(safe-area-inset-bottom, 1rem);
@@ -134,7 +134,6 @@ button.ghost {
 .status-dot {
   width: 10px;
   height: 10px;
-  border-radius: 50%;
   background: var(--border);
   flex-shrink: 0;
 }
@@ -150,14 +149,12 @@ button.ghost {
 .status-label {
   font-weight: 600;
   display: block;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
 }
 
 .status-email,
 .status-message {
-  display: block;
-  font-size: 0.72rem;
+  display: inline;
+  font-size: 0.7rem;
   text-transform: none;
   color: var(--muted);
 }
@@ -167,27 +164,30 @@ button.ghost {
 }
 
 .topbar-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.4rem;
   align-items: center;
+  width: min(340px, 100%);
 }
 
 .topbar-actions button {
-  padding: 0.35rem 0.85rem;
-  min-height: 34px;
-  font-size: 0.85rem;
+  padding: 0.3rem 0.6rem;
+  min-height: 32px;
+  font-size: 0.82rem;
+  width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .topbar-connect {
   border-color: transparent;
   background: var(--accent-3);
   color: #111;
-  padding: 0.45rem 0.95rem;
-  font-size: 0.85rem;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.82rem;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
 }
 
 .topbar-connect:disabled {
@@ -211,18 +211,19 @@ button.ghost {
 }
 
 .person-panel .panel-header h2 {
-  color: var(--member-accent, var(--accent));
+  color: var(--member-accent-ink, var(--accent));
 }
 
 .person-panel .panel-header p {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-size: 0.75rem;
+  color: var(--member-accent-ink, var(--muted));
 }
 
 .person-panel .panel-actions button {
-  border-color: var(--member-accent, var(--accent));
-  color: var(--member-accent, var(--accent));
+  border-color: var(--member-accent-ink, var(--accent));
+  color: var(--member-accent-ink, var(--accent));
   background: transparent;
 }
 
@@ -231,9 +232,85 @@ button.ghost {
 }
 
 .person-panel .log-actions button.primary {
-  border-color: var(--member-accent, var(--accent));
-  background: var(--member-accent, var(--accent));
+  border-color: var(--member-accent-ink, var(--accent));
+  background: var(--member-accent-ink, var(--accent));
   color: #111;
+}
+
+.person-panel .primary {
+  border-color: var(--member-accent-ink, var(--accent));
+  background: var(--member-accent-ink, var(--accent));
+  color: #111;
+}
+
+.person-panel .tab-bar button.active {
+  border-color: var(--member-accent-ink, var(--accent));
+  background: var(--member-tint, var(--bg-alt));
+}
+
+.person-panel .section-header h3 {
+  color: var(--member-accent-ink, var(--accent));
+}
+
+.person-panel .section-header p {
+  color: var(--member-accent-ink, var(--muted));
+}
+
+.person-panel .log-quick {
+  border-color: var(--member-accent-ink, var(--accent));
+  background: var(--member-tint, var(--panel));
+}
+
+.person-panel .log-form {
+  border-color: var(--member-accent-ink, var(--accent));
+  background: var(--member-tint, var(--bg-alt));
+}
+
+.person-panel .log-block {
+  border-color: var(--member-accent-ink, var(--accent));
+  background: var(--member-tint, var(--panel));
+}
+
+.person-panel .log-row {
+  border-color: var(--member-accent-ink, var(--accent));
+  background: var(--member-tint, var(--bg-alt));
+}
+
+.person-panel .chart-bg {
+  fill: var(--member-tint, var(--panel));
+  stroke: var(--member-accent-ink, var(--accent));
+}
+
+.person-panel .chart-point {
+  fill: var(--member-accent-ink, var(--accent));
+}
+
+.person-panel .calendar {
+  border-color: var(--member-accent-ink, var(--accent));
+  background: var(--member-tint, var(--panel));
+}
+
+.person-panel .calendar-cell {
+  background: var(--member-tint, var(--panel));
+  border-color: var(--member-accent-ink, var(--accent));
+}
+
+.person-panel .calendar-cell.today {
+  border-color: var(--member-accent-ink, var(--accent));
+}
+
+.person-panel .calendar-dot.fever {
+  background: var(--member-accent-ink, var(--accent));
+}
+
+.person-panel .calendar-dot.med {
+  background: transparent;
+  border: 2px solid var(--member-accent-ink, var(--accent));
+}
+
+.person-panel .episode-card {
+  border-color: var(--member-accent-ink, var(--accent));
+  background: var(--member-tint, var(--panel));
 }
 
 .panel-header {
@@ -369,7 +446,7 @@ button.ghost {
 .form-grid textarea {
   padding: 0.6rem 0.7rem;
   border: 2px solid var(--border);
-  background: #fff;
+  background: var(--panel);
 }
 
 .form-grid textarea {
@@ -417,20 +494,20 @@ button.ghost {
 }
 
 .log-quick {
-  border-left: 4px solid var(--accent-2);
-  padding: 0.5rem 0.5rem 1rem;
-  background: transparent;
-  margin-bottom: 1.5rem;
+  border: 1px solid var(--border);
+  padding: 0.75rem;
+  background: var(--panel);
+  margin-bottom: 1.25rem;
 }
 
 .log-quick-header {
-  margin-bottom: 0.6rem;
+  margin-bottom: 0.5rem;
 }
 
 .log-quick-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 0.85rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
 }
 
 .log-form {
@@ -450,7 +527,7 @@ button.ghost {
 
 .chip {
   border: 2px solid var(--border);
-  background: #fff;
+  background: var(--panel);
   padding: 0.35rem 0.85rem;
   font-size: 0.8rem;
 }
@@ -506,7 +583,7 @@ button.ghost {
 .log-block {
   border: 2px solid var(--border);
   padding: 1rem;
-  background: #fff;
+  background: var(--panel);
 }
 
 .temp-chart {
@@ -515,13 +592,13 @@ button.ghost {
 }
 
 .chart-bg {
-  fill: #fff;
+  fill: var(--panel);
   stroke: var(--border);
   stroke-width: 2px;
 }
 
 .chart-point {
-  fill: var(--accent-2);
+  fill: var(--accent-4);
 }
 
 .chart-label {
@@ -540,7 +617,7 @@ button.ghost {
 .calendar {
   border: 2px solid var(--border);
   padding: 1.25rem;
-  background: #fff;
+  background: var(--panel);
   overflow-x: hidden;
   width: 100%;
   max-width: 100%;
@@ -580,7 +657,7 @@ button.ghost {
   min-height: 60px;
   min-width: 0;
   border: 2px solid var(--border);
-  background: #fff;
+  background: var(--panel);
   padding: 0.4rem;
   display: grid;
   gap: 0.35rem;
@@ -634,17 +711,19 @@ button.ghost {
 
 @media (max-width: 768px) {
   .topbar {
-    flex-direction: column;
-    align-items: flex-start;
+    padding: calc(0.25rem + env(safe-area-inset-top, 0.25rem)) 0.75rem;
+  }
+
+  .app-title {
+    font-size: 1.35rem;
+  }
+
+  .topbar-status {
+    font-size: 0.68rem;
   }
 
   .topbar-actions {
     width: 100%;
-    justify-content: flex-start;
-  }
-
-  .topbar-connect {
-    flex: 1;
   }
 
   .calendar-header {
@@ -668,20 +747,20 @@ button.ghost {
 
 @media (max-width: 480px) {
   .topbar-actions {
-    flex-direction: column;
-    align-items: stretch;
+    gap: 0.3rem;
   }
 
-  .topbar-connect {
-    width: 100%;
-    text-align: center;
+  .topbar-actions button {
+    padding: 0.25rem 0.4rem;
+    font-size: 0.75rem;
+    min-height: 30px;
   }
 }
 
 .settings-card {
   padding: 1.5rem;
   border: 2px solid var(--border);
-  background: #fff;
+  background: var(--panel);
   display: grid;
   gap: 0.75rem;
 }
@@ -690,7 +769,7 @@ button.ghost {
   margin-bottom: 2rem;
   padding: 1.5rem;
   border: 2px dashed var(--accent);
-  background: #fff;
+  background: var(--panel);
   display: grid;
   gap: 1rem;
 }
@@ -757,9 +836,9 @@ button.ghost {
 .message {
   margin-top: 1rem;
   padding: 0.75rem 1rem;
-  border: 2px solid var(--accent-2);
-  background: #fff4f0;
-  color: #802b22;
+  border: 2px solid var(--border);
+  background: var(--bg-alt);
+  color: var(--muted);
   font-weight: 600;
 }
 
@@ -768,11 +847,6 @@ button.ghost {
 }
 
 @media (max-width: 720px) {
-  .topbar {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
   .panel-header {
     flex-direction: column;
     align-items: flex-start;
@@ -794,6 +868,7 @@ button.ghost {
 }
 .status-copy {
   display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
 }
