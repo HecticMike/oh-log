@@ -218,10 +218,10 @@ const toISOFromDateTime = (dateValue: string, timeValue: string) => {
   return date.toISOString();
 };
 
-type MemberTab = 'logs' | 'calendar' | 'illness';
+type MemberTab = 'logs' | 'calendar' | 'illness' | 'insights';
 
 const parseMemberTab = (value: string | null): MemberTab | undefined =>
-  value === 'logs' || value === 'calendar' || value === 'illness' ? value : undefined;
+  value === 'logs' || value === 'calendar' || value === 'illness' || value === 'insights' ? value : undefined;
 
 const routeFromHash = () => {
   const hash = window.location.hash.replace('#', '');
@@ -444,6 +444,72 @@ const TemperatureChart = ({ entries }: { entries: TempEntry[] }) => {
 
 
 
+};
+
+type BarDatum = {
+  label: string;
+  value: number;
+  meta?: string;
+};
+
+const MiniBarChart = ({
+  id,
+  title,
+  data,
+  valueSuffix = '',
+  emptyLabel = 'No data yet.'
+}: {
+  id: string;
+  title: string;
+  data: BarDatum[];
+  valueSuffix?: string;
+  emptyLabel?: string;
+}) => {
+  if (data.length === 0) {
+    return <div className="chart-empty">{emptyLabel}</div>;
+  }
+  const width = 340;
+  const height = 180;
+  const padding = 28;
+  const gap = 10;
+  const max = Math.max(...data.map((item) => item.value), 1);
+  const barWidth = Math.max(
+    14,
+    (width - padding * 2 - gap * (data.length - 1)) / Math.max(data.length, 1)
+  );
+  const chartHeight = height - padding * 2 - 16;
+
+  return (
+    <svg id={id} className="insight-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={title}>
+      <rect x="0" y="0" width={width} height={height} className="chart-bg" />
+      <text x={padding} y={padding - 8} className="chart-label">
+        {title}
+      </text>
+      {data.map((item, index) => {
+        const barHeight = Math.max(4, (item.value / max) * chartHeight);
+        const x = padding + index * (barWidth + gap);
+        const y = height - padding - barHeight;
+        const label = item.label.length > 10 ? `${item.label.slice(0, 10)}...` : item.label;
+        return (
+          <g key={item.label}>
+            <rect x={x} y={y} width={barWidth} height={barHeight} className="insight-bar" />
+            <text x={x + barWidth / 2} y={y - 6} textAnchor="middle" className="chart-value">
+              {item.value}
+              {valueSuffix}
+            </text>
+            <text x={x + barWidth / 2} y={height - padding + 12} textAnchor="middle" className="chart-label">
+              {label}
+            </text>
+            {item.meta && (
+              <text x={x + barWidth / 2} y={height - padding + 26} textAnchor="middle" className="chart-meta">
+                {item.meta}
+              </text>
+            )}
+          </g>
+        );
+      })}
+    </svg>
+  );
 };
 
 
@@ -741,8 +807,7 @@ const LogEntryForms = ({
     return (
       temps
         .slice()
-        .sort((a: TempEntry, b: TempEntry) => new Date(b.atISO).getTime() - new Date(a.atISO).getTime())[0] ??
-      null
+        .sort((a: TempEntry, b: TempEntry) => new Date(b.atISO).getTime() - new Date(a.atISO).getTime())[0] ??       null
     );
   }, [temps]);
 
@@ -751,8 +816,7 @@ const LogEntryForms = ({
     return (
       meds
         .slice()
-        .sort((a: MedEntry, b: MedEntry) => new Date(b.atISO).getTime() - new Date(a.atISO).getTime())[0] ??
-      null
+        .sort((a: MedEntry, b: MedEntry) => new Date(b.atISO).getTime() - new Date(a.atISO).getTime())[0] ??       null
     );
   }, [meds]);
 
@@ -2084,7 +2148,7 @@ const TempLogList = ({ entries, episodes, onUpdate, onDelete }: TempLogListProps
     clearLongPress();
     longPressTimer.current = window.setTimeout(() => {
       if (typeof window === 'undefined') return;
-      if (window.confirm('Delete this entry?')) {
+      if (window.confirm('Delete this entry-')) {
         onDelete(entryId);
       }
     }, 650);
@@ -2436,7 +2500,7 @@ const MedLogList = ({ entries, episodes, onUpdate, onDelete, onUpsertCatalog }: 
     clearLongPress();
     longPressTimer.current = window.setTimeout(() => {
       if (typeof window === 'undefined') return;
-      if (window.confirm('Delete this entry?')) {
+      if (window.confirm('Delete this entry-')) {
         onDelete(entryId);
       }
     }, 650);
@@ -2813,7 +2877,7 @@ const SymptomLogList = ({ entries, episodes, onUpdate, onDelete }: SymptomLogLis
     clearLongPress();
     longPressTimer.current = window.setTimeout(() => {
       if (typeof window === 'undefined') return;
-      if (window.confirm('Delete this entry?')) {
+      if (window.confirm('Delete this entry-')) {
         onDelete(entryId);
       }
     }, 650);
@@ -3798,7 +3862,7 @@ const PersonView = ({
   const handleEpisodeDelete = (episodeId: string) => {
     if (
       typeof window !== 'undefined' &&
-      !window.confirm('Delete this illness episode? Linked logs will remain but lose their association.')
+      !window.confirm('Delete this illness episode- Linked logs will remain but lose their association.')
     )
       return;
     onDeleteEpisode(episodeId);
@@ -3899,6 +3963,115 @@ const PersonView = ({
     () => symptoms.filter((entry) => entry.memberId === member.id && !entry.deletedAtISO),
     [symptoms, member.id]
   );
+
+  const episodeInsights = useMemo(() => {
+    return memberEpisodes.map((episode) => {
+      const linkedTemps = memberTemps.filter((entry) => entry.episodeId === episode.id);
+      const avgTemp = linkedTemps.length
+        ? linkedTemps.reduce((sum, entry) => sum + entry.tempC, 0) / linkedTemps.length
+        : null;
+      const feverDays = new Set(
+        linkedTemps
+          .filter((entry) => entry.tempC >= FEVER_THRESHOLD)
+          .map((entry) => toLocalDateKey(entry.atISO))
+          .filter(Boolean)
+      ).size;
+      return {
+        episode,
+        avgTemp,
+        feverDays,
+        tempCount: linkedTemps.length
+      };
+    });
+  }, [memberEpisodes, memberTemps]);
+
+  const avgTempOverall = useMemo(() => {
+    if (memberTemps.length === 0) return null;
+    const sum = memberTemps.reduce((acc, entry) => acc + entry.tempC, 0);
+    return sum / memberTemps.length;
+  }, [memberTemps]);
+
+  const feverDaysOverall = useMemo(() => {
+    const days = new Set(
+      memberTemps
+        .filter((entry) => entry.tempC >= FEVER_THRESHOLD)
+        .map((entry) => toLocalDateKey(entry.atISO))
+        .filter(Boolean)
+    );
+    return days.size;
+  }, [memberTemps]);
+
+  const medFrequency = useMemo(() => {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    const map = new Map<string, number>();
+    memberMeds
+      .filter((entry) => new Date(entry.atISO) >= cutoff)
+      .forEach((entry) => {
+        const key = entry.medName.trim() || 'Unknown';
+        map.set(key, (map.get(key) ?? 0) + 1);
+      });
+    return Array.from(map.entries())
+      .map(([label, count]) => ({ label, value: count }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 6);
+  }, [memberMeds]);
+
+  const medCountLast30 = useMemo(() => {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    return memberMeds.filter((entry) => new Date(entry.atISO) >= cutoff).length;
+  }, [memberMeds]);
+
+  const avgTempByEpisode = useMemo(
+    () =>
+      episodeInsights
+        .filter((item) => item.avgTemp !== null)
+        .slice(0, 6)
+        .map((item) => ({
+          label: item.episode.category,
+          value: Number((item.avgTemp ?? 0).toFixed(1)),
+          meta: formatDate(item.episode.startedAtISO)
+        })),
+    [episodeInsights]
+  );
+
+  const feverDaysByEpisode = useMemo(
+    () =>
+      episodeInsights
+        .filter((item) => item.feverDays > 0)
+        .slice(0, 6)
+        .map((item) => ({
+          label: item.episode.category,
+          value: item.feverDays,
+          meta: formatDate(item.episode.startedAtISO)
+        })),
+    [episodeInsights]
+  );
+
+  const downloadSvg = (id: string, filename: string) => {
+    if (typeof document === 'undefined') return;
+    const svg = document.getElementById(id) as SVGSVGElement | null;
+    if (!svg) return;
+    const serializer = new XMLSerializer();
+    const source = serializer.serializeToString(svg);
+    const blob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadInsights = () => {
+    const safeName = member.name.trim().replace(/[^a-zA-Z0-9-_]+/g, '-');
+    const base = safeName || 'member';
+    downloadSvg('insight-avg-temp', `our-health-${base}-avg-temp.svg`);
+    downloadSvg('insight-fever-days', `our-health-${base}-fever-days.svg`);
+    downloadSvg('insight-med-frequency', `our-health-${base}-med-frequency.svg`);
+  };
+
 
 
 
@@ -4112,7 +4285,19 @@ const PersonView = ({
 
 
 
- <button
+ 
+        <button
+          type="button"
+          className={tab === 'insights' ? 'active' : ''}
+          onClick={() => {
+            setTab('insights');
+            onNavigate(`#person=${member.id}&tab=insights`);
+          }}
+        >
+          Insights
+        </button>
+
+<button
           type="button"
           className={tab === 'illness' ? 'active' : ''}
           onClick={() => {
@@ -4343,6 +4528,66 @@ const PersonView = ({
 
 
 
+
+
+      {tab === 'insights' && (
+        <div className="insights">
+          <div className="insight-summary">
+            <div className="insight-card">
+              <div className="insight-label">Average temp</div>
+              <div className="insight-value">
+                {avgTempOverall !== null ? `${avgTempOverall.toFixed(1)} C` : '-'}
+              </div>
+              <div className="insight-sub">{memberTemps.length} readings</div>
+            </div>
+            <div className="insight-card">
+              <div className="insight-label">Fever days</div>
+              <div className="insight-value">{feverDaysOverall}</div>
+              <div className="insight-sub">Temp {'>='} {FEVER_THRESHOLD.toFixed(1)} C</div>
+            </div>
+            <div className="insight-card">
+              <div className="insight-label">Meds (30 days)</div>
+              <div className="insight-value">{medCountLast30}</div>
+              <div className="insight-sub">Last 30 days</div>
+            </div>
+          </div>
+
+          <div className="insight-actions">
+            <button type="button" className="ghost" onClick={handleDownloadInsights}>
+              Download charts (SVG)
+            </button>
+            <span className="insight-note">Charts export as SVG for Excel or Keynote.</span>
+          </div>
+
+          <div className="insight-grid">
+            <div className="insight-card">
+              <MiniBarChart
+                id="insight-avg-temp"
+                title="Avg temp by illness"
+                data={avgTempByEpisode}
+                valueSuffix=" C"
+                emptyLabel="No linked temperatures yet."
+              />
+            </div>
+            <div className="insight-card">
+              <MiniBarChart
+                id="insight-fever-days"
+                title="Fever days by illness"
+                data={feverDaysByEpisode}
+                emptyLabel="No fever days yet."
+              />
+            </div>
+            <div className="insight-card">
+              <MiniBarChart
+                id="insight-med-frequency"
+                title="Meds in last 30 days"
+                data={medFrequency}
+                emptyLabel="No meds in last 30 days."
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {tab === 'illness' && (
 
@@ -4805,7 +5050,7 @@ const EpisodeView = ({
 
 
 
-    if (!window.confirm('Delete this illness episode? Entries that link to it will stay in the log.')) return;
+    if (!window.confirm('Delete this illness episode- Entries that link to it will stay in the log.')) return;
 
     await onDeleteEpisode(episode.id);
 
@@ -8352,6 +8597,23 @@ export default function App() {
 
         {members.map((member) => {
           const lastISO = getMemberLastActivityISO(member.id);
+          const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+          const recentTemps = temps
+            .filter(
+              (entry) =>
+                entry.memberId === member.id &&
+                !entry.deletedAtISO &&
+                new Date(entry.atISO).getTime() >= cutoff
+            )
+            .sort((a, b) => new Date(b.atISO).getTime() - new Date(a.atISO).getTime());
+          const recentMeds = meds
+            .filter(
+              (entry) =>
+                entry.memberId === member.id &&
+                !entry.deletedAtISO &&
+                new Date(entry.atISO).getTime() >= cutoff
+            )
+            .sort((a, b) => new Date(b.atISO).getTime() - new Date(a.atISO).getTime());
           return (
 
 
@@ -8402,6 +8664,38 @@ export default function App() {
               <div className="person-sub">
                 {lastISO ? `Last log: ${formatDateTime(lastISO)}` : 'No logs yet'}
               </div>
+              {(recentTemps.length > 0 || recentMeds.length > 0) ? (
+                <div className="person-recent">
+                  <div className="person-recent-title">Last 24h</div>
+                  {recentTemps.length > 0 && (
+                    <div className="person-recent-list">
+                      {recentTemps.map((entry) => (
+                        <div key={entry.id} className="person-recent-item">
+                          <span className="person-recent-label">Temp</span>
+                          <span>{entry.tempC.toFixed(1)} C</span>
+                          <span className="person-recent-time">{formatTime(entry.atISO)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {recentMeds.length > 0 && (
+                    <div className="person-recent-list">
+                      {recentMeds.map((entry) => (
+                        <div key={entry.id} className="person-recent-item">
+                          <span className="person-recent-label">Med</span>
+                          <span>
+                            {entry.medName}
+                            {entry.doseText ? ` ${entry.doseText}` : ''}
+                          </span>
+                          <span className="person-recent-time">{formatTime(entry.atISO)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="person-sub">No temp or meds in the last 24h.</div>
+              )}
 
 
 

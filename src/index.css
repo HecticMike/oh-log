@@ -126,9 +126,31 @@ textarea:focus-visible {
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 0.85rem;
-  padding: calc(0.55rem + env(safe-area-inset-top, 0.3rem)) 1rem 0.75rem;
-  background: rgba(255, 255, 255, 0.86);
-  border: 1px solid var(--border);
+  padding: calc(0.4rem + env(safe-area-inset-top, 0.25rem)) 0.9rem 0.55rem;
+  border: 2px solid transparent;
+  background:
+    linear-gradient(
+      110deg,
+      rgba(255, 59, 48, 0.16),
+      rgba(255, 149, 0, 0.16),
+      rgba(255, 214, 10, 0.16),
+      rgba(52, 199, 89, 0.16),
+      rgba(0, 199, 190, 0.16),
+      rgba(0, 122, 255, 0.16),
+      rgba(175, 82, 222, 0.16)
+    )
+    padding-box,
+    linear-gradient(
+      110deg,
+      #ff3b30,
+      #ff9500,
+      #ffd60a,
+      #34c759,
+      #00c7be,
+      #007aff,
+      #af52de
+    )
+    border-box;
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
   position: sticky;
@@ -146,6 +168,7 @@ textarea:focus-visible {
 
 .app-title {
   font-size: 1.5rem;
+  font-weight: 800;
 }
 
 .topbar-status {
@@ -443,6 +466,123 @@ textarea:focus-visible {
 .person-sub {
   font-size: 0.85rem;
   color: var(--muted);
+}
+
+.person-recent {
+  margin-top: 0.5rem;
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--text);
+}
+
+.person-recent-title {
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.65rem;
+}
+
+.person-recent-list {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.person-recent-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.person-recent-label {
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  font-size: 0.6rem;
+  letter-spacing: 0.04em;
+}
+
+.person-recent-time {
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.insights {
+  display: grid;
+  gap: 1rem;
+}
+
+.insight-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.75rem;
+}
+
+.insight-card {
+  padding: 0.9rem;
+  border: 1px solid var(--member-accent-ink, var(--border));
+  background: var(--member-tint, var(--panel));
+  box-shadow: var(--shadow-soft);
+  display: grid;
+  gap: 0.35rem;
+}
+
+.insight-label {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.62rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.insight-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--member-accent-ink, var(--ink));
+}
+
+.insight-sub {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.insight-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.insight-note {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.insight-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.85rem;
+}
+
+.insight-chart {
+  width: 100%;
+  height: auto;
+}
+
+.insight-bar {
+  fill: var(--member-accent-ink, var(--accent));
+}
+
+.chart-value {
+  font-size: 0.6rem;
+  fill: var(--member-accent-ink, var(--ink));
+}
+
+.chart-meta {
+  font-size: 0.55rem;
+  fill: var(--muted);
 }
 
 .episode-list {
@@ -988,11 +1128,11 @@ textarea:focus-visible {
 
 @media (max-width: 768px) {
   .topbar {
-    padding: calc(0.4rem + env(safe-area-inset-top, 0.25rem)) 0.85rem 0.65rem;
+    padding: calc(0.3rem + env(safe-area-inset-top, 0.2rem)) 0.75rem 0.5rem;
   }
 
   .app-title {
-    font-size: 1.35rem;
+    font-size: 1.25rem;
   }
 
   .topbar-status {
