@@ -7599,6 +7599,10 @@ export default function App() {
     return lastMemberId;
   }, [route.page, route.memberId, route.episodeId, episodes, lastMemberId]);
 
+  const primaryMemberId = members[0]?.id ?? null;
+
+  const navMemberIdFixed = navMemberId ?? primaryMemberId;
+
   const activeMemberTab: MemberTab | null =
     route.page === 'person' ? route.tab ?? 'logs' : null;
 
@@ -9207,16 +9211,16 @@ export default function App() {
         <button
           type="button"
           className={activeMemberTab === 'logs' ? 'active' : ''}
-          onClick={() => navMemberId && navigate(`#person=${navMemberId}&tab=logs`)}
-          disabled={!navMemberId}
+          onClick={() => navMemberIdFixed && navigate(`#person=${navMemberIdFixed}&tab=logs`)}
+          disabled={!navMemberIdFixed}
         >
           Logs
         </button>
         <button
           type="button"
           className={activeMemberTab === 'calendar' ? 'active' : ''}
-          onClick={() => navMemberId && navigate(`#person=${navMemberId}&tab=calendar`)}
-          disabled={!navMemberId}
+          onClick={() => navMemberIdFixed && navigate(`#person=${navMemberIdFixed}&tab=calendar`)}
+          disabled={!navMemberIdFixed}
         >
           Calendar
         </button>
