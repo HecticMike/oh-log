@@ -888,6 +888,45 @@ textarea:focus-visible {
   box-shadow: var(--shadow-soft);
 }
 
+.med-course {
+  margin-top: 0.8rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: var(--radius-sm);
+}
+
+.med-course .section-header {
+  align-items: flex-start;
+}
+
+.med-course .section-header h4 {
+  margin: 0;
+}
+
+.med-course-list {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.8rem;
+}
+
+.med-course-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.8rem;
+  align-items: center;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.9);
+  padding: 0.6rem 0.7rem;
+  border-radius: var(--radius-sm);
+}
+
+.med-course-item span {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
 .temp-chart {
   width: 100%;
   margin-top: 1rem;
@@ -1269,7 +1308,7 @@ textarea:focus-visible {
 
 .member-row {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: 1fr auto;
   gap: 0.5rem;
   align-items: center;
 }
@@ -1287,15 +1326,6 @@ textarea:focus-visible {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: transparent;
-}
-
-.member-color-preview {
-  width: 38px;
-  height: 38px;
-  border-radius: 999px;
-  border: 2px solid var(--border);
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.65);
-  flex-shrink: 0;
 }
 
 .callout {
@@ -1372,6 +1402,10 @@ textarea:focus-visible {
 
   .log-row.swipe-open > .log-actions {
     transform: translateY(-50%) translateX(0);
+  }
+
+  .med-course-item {
+    grid-template-columns: 1fr;
   }
 
   .wizard-step {

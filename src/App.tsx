@@ -15,6 +15,7 @@ import {
   type Household,
   type LogData,
   type MedCatalogItem,
+  type MedCourse,
   type MedEntry,
   type Member,
   type SymptomEntry,
@@ -129,6 +130,8 @@ import {
 
 } from './config';
 
+import { buildCourseIcs, buildCourseSchedule, formatRelativeTime } from './lib/medicationCourse';
+
 
 
 
@@ -139,6 +142,12 @@ const formatDateTime = (iso?: string | null) => (iso ? new Date(iso).toLocaleStr
 const formatDate = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString() : '');
 const formatTime = (iso?: string | null) =>
   iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+const sanitizeFilePart = (value: string) =>
+  value
+    .trim()
+    .replace(/[^a-zA-Z0-9-_]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '') || 'member';
 
 const toLocalDateKey = (iso?: string | null) => {
   if (!iso) return '';
@@ -2766,6 +2775,183 @@ const MedLogList = ({ entries, episodes, onUpdate, onDelete, onUpsertCatalog }: 
 
 
 
+type MedicationCourseSectionProps = {
+  member: Member;
+  catalog: MedCatalogItem[];
+  courses: MedCourse[];
+  onUpsertCatalog: (name: string) => Promise<MedCatalogItem | null>;
+  onCreateCourse: (input: {
+    memberId: string;
+    catalogItem: MedCatalogItem;
+    doseText: string;
+    startAtISO: string;
+    intervalHours: number;
+    durationDays: number;
+    route: string;
+    note: string;
+  }) => Promise<MedCourse | null>;
+  onDeleteCourse: (courseId: string) => Promise<void>;
+  onExportCourse: (course: MedCourse, member: Member) => void;
+};
+
+const MedicationCourseSection = ({
+  member,
+  catalog,
+  courses,
+  onUpsertCatalog,
+  onCreateCourse,
+  onDeleteCourse,
+  onExportCourse
+}: MedicationCourseSectionProps) => {
+  const [medName, setMedName] = useState('');
+  const [doseText, setDoseText] = useState('');
+  const [route, setRoute] = useState('');
+  const [startDate, setStartDate] = useState(toLocalDateInput(nowISO()));
+  const [startTime, setStartTime] = useState(toLocalTimeInput(nowISO()));
+  const [intervalHours, setIntervalHours] = useState('8');
+  const [durationDays, setDurationDays] = useState('7');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setStartDate(toLocalDateInput(nowISO()));
+    setStartTime(toLocalTimeInput(nowISO()));
+  }, [member.id]);
+
+  const submitCourse = async () => {
+    const interval = Math.max(1, Math.round(Number(intervalHours)));
+    const duration = Math.max(1, Math.round(Number(durationDays)));
+    if (!Number.isFinite(interval) || !Number.isFinite(duration)) return;
+    setBusy(true);
+    try {
+      const catalogItem = await onUpsertCatalog(medName);
+      if (!catalogItem) return;
+      const created = await onCreateCourse({
+        memberId: member.id,
+        catalogItem,
+        doseText: doseText.trim(),
+        startAtISO: toISOFromDateTime(startDate, startTime),
+        intervalHours: interval,
+        durationDays: duration,
+        route: route.trim(),
+        note: note.trim()
+      });
+      if (!created) return;
+      setNote('');
+      if (typeof window !== 'undefined' && window.confirm('Course saved. Download reminder calendar now?')) {
+        onExportCourse(created, member);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="med-course">
+      <div className="section-header">
+        <h4>Antibiotic course reminders</h4>
+        <p>Every N hours for D days, exported as iPhone-ready calendar reminders.</p>
+      </div>
+      <div className="form-grid">
+        <label>
+          Medication
+          <input
+            list={`med-course-catalog-${member.id}`}
+            value={medName}
+            onChange={(event) => setMedName(event.target.value)}
+            placeholder="Amoxicillin"
+          />
+          <datalist id={`med-course-catalog-${member.id}`}>
+            {catalog.map((item) => (
+              <option key={item.id} value={item.name} />
+            ))}
+          </datalist>
+        </label>
+        <label>
+          Dose
+          <input value={doseText} onChange={(event) => setDoseText(event.target.value)} placeholder="5 mL" />
+        </label>
+        <label>
+          Start date
+          <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+        </label>
+        <label>
+          Start time
+          <input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} />
+        </label>
+        <label>
+          Every (hours)
+          <input
+            type="number"
+            min={1}
+            step={1}
+            value={intervalHours}
+            onChange={(event) => setIntervalHours(event.target.value)}
+          />
+        </label>
+        <label>
+          Duration (days)
+          <input
+            type="number"
+            min={1}
+            step={1}
+            value={durationDays}
+            onChange={(event) => setDurationDays(event.target.value)}
+          />
+        </label>
+        <label>
+          Route
+          <input value={route} onChange={(event) => setRoute(event.target.value)} placeholder="Oral (optional)" />
+        </label>
+        <label>
+          Note
+          <input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Optional" />
+        </label>
+        <button type="button" className="primary" onClick={submitCourse} disabled={busy}>
+          Save course
+        </button>
+      </div>
+
+      <div className="med-course-list">
+        {courses.length === 0 && <p className="empty">No medication courses yet.</p>}
+        {courses.map((course) => {
+          const count = buildCourseSchedule(course).length;
+          return (
+            <div key={course.id} className="med-course-item">
+              <div>
+                <strong>{course.medName}</strong>
+                <span>
+                  Every {course.intervalHours}h for {course.durationDays} day{course.durationDays === 1 ? '' : 's'} (
+                  {count} doses)
+                </span>
+                <span>
+                  Starts {formatDate(course.startAtISO)} {formatTime(course.startAtISO)}
+                </span>
+              </div>
+              <div className="log-actions">
+                <button type="button" className="ghost" onClick={() => onExportCourse(course, member)}>
+                  Export reminders (.ics)
+                </button>
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => {
+                    if (typeof window === 'undefined' || window.confirm('Delete this medication course?')) {
+                      onDeleteCourse(course.id);
+                    }
+                  }}
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 type SymptomLogListProps = {
 
 
@@ -3622,6 +3808,8 @@ type PersonViewProps = {
 
   meds: MedEntry[];
 
+  medCourses: MedCourse[];
+
   symptoms: SymptomEntry[];
 
   catalog: MedCatalogItem[];
@@ -3675,7 +3863,20 @@ type PersonViewProps = {
 
   ) => Promise<void>;
 
+  onCreateMedCourse: (input: {
+    memberId: string;
+    catalogItem: MedCatalogItem;
+    doseText: string;
+    startAtISO: string;
+    intervalHours: number;
+    durationDays: number;
+    route: string;
+    note: string;
+  }) => Promise<MedCourse | null>;
 
+  onDeleteMedCourse: (courseId: string) => Promise<void>;
+
+  onExportMedCourse: (course: MedCourse, member: Member) => void;
 
   onAddSymptom: (
 
@@ -3773,6 +3974,10 @@ const PersonView = ({
 
 
 
+  medCourses,
+
+
+
   symptoms,
 
 
@@ -3797,6 +4002,10 @@ const PersonView = ({
 
 
   onAddMed,
+
+  onCreateMedCourse,
+  onDeleteMedCourse,
+  onExportMedCourse,
 
 
 
@@ -3950,6 +4159,14 @@ const PersonView = ({
   const memberMeds = useMemo(
     () => meds.filter((entry) => entry.memberId === member.id && !entry.deletedAtISO),
     [meds, member.id]
+  );
+
+  const memberCourses = useMemo(
+    () =>
+      medCourses
+        .filter((course) => course.memberId === member.id && !course.deletedAtISO)
+        .sort((a, b) => new Date(b.startAtISO).getTime() - new Date(a.startAtISO).getTime()),
+    [medCourses, member.id]
   );
 
 
@@ -4335,6 +4552,64 @@ const PersonView = ({
 
 
 
+              <h3>Medication</h3>
+
+
+
+              <p>Stored in your Drive catalog.</p>
+
+
+
+            </div>
+
+
+
+            <MedicationCourseSection
+              member={member}
+              catalog={catalog}
+              courses={memberCourses}
+              onUpsertCatalog={onUpsertCatalog}
+              onCreateCourse={onCreateMedCourse}
+              onDeleteCourse={onDeleteMedCourse}
+              onExportCourse={onExportMedCourse}
+            />
+            {memberMeds.length === 0 && (
+              <div className="empty-state">
+                <p className="empty">No medication entries yet.</p>
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => focusQuickField(`med-name-${member.id}`)}
+                >
+                  Add first medication
+                </button>
+              </div>
+            )}
+
+
+
+            <MedLogList
+              entries={memberMeds}
+              episodes={memberEpisodes}
+              onUpdate={onUpdateMed}
+              onDelete={onDeleteMed}
+              onUpsertCatalog={onUpsertCatalog}
+            />
+
+
+
+          </div>
+
+
+
+          <div className="log-block">
+
+
+
+            <div className="section-header">
+
+
+
               <h3>Temperatures</h3>
 
 
@@ -4366,54 +4641,11 @@ const PersonView = ({
               </div>
             )}
 
-
-
-            <TempLogList entries={memberTemps} episodes={memberEpisodes} onUpdate={onUpdateTemp} onDelete={onDeleteTemp} />
-
-
-
-          </div>
+            <TempLogList
 
 
 
-          <div className="log-block">
-
-
-
-            <div className="section-header">
-
-
-
-              <h3>Medication</h3>
-
-
-
-              <p>Stored in your Drive catalog.</p>
-
-
-
-            </div>
-
-
-
-            {memberMeds.length === 0 && (
-              <div className="empty-state">
-                <p className="empty">No medication entries yet.</p>
-                <button
-                  type="button"
-                  className="ghost"
-                  onClick={() => focusQuickField(`med-name-${member.id}`)}
-                >
-                  Add first medication
-                </button>
-              </div>
-            )}
-
-            <MedLogList
-
-
-
-              entries={memberMeds}
+              entries={memberTemps}
 
 
 
@@ -4421,15 +4653,11 @@ const PersonView = ({
 
 
 
-              onUpdate={onUpdateMed}
+              onUpdate={onUpdateTemp}
 
 
 
-              onDelete={onDeleteMed}
-
-
-
-              onUpsertCatalog={onUpsertCatalog}
+              onDelete={onDeleteTemp}
 
 
 
@@ -6397,8 +6625,6 @@ const SettingsView = ({
 
                   />
 
-                  <span className="member-color-preview" style={{ backgroundColor: member.accentColor }} />
-
                 </div>
 
               </div>
@@ -7551,6 +7777,8 @@ export default function App() {
 
   const meds = logState?.data.meds ?? emptyLog().meds;
 
+  const medCourses = logState?.data.medCourses ?? emptyLog().medCourses;
+
   const symptoms = logState?.data.symptoms ?? emptyLog().symptoms;
 
   const catalog = logState?.data.medCatalog ?? emptyLog().medCatalog;
@@ -7854,6 +8082,64 @@ export default function App() {
   };
 
 
+
+  const createMedCourse = async (input: {
+    memberId: string;
+    catalogItem: MedCatalogItem;
+    doseText: string;
+    startAtISO: string;
+    intervalHours: number;
+    durationDays: number;
+    route: string;
+    note: string;
+  }): Promise<MedCourse | null> => {
+    if (!logState) return null;
+    const now = nowISO();
+    const course: MedCourse = {
+      id: createId(),
+      memberId: input.memberId,
+      medId: input.catalogItem.id,
+      medName: input.catalogItem.name,
+      doseText: input.doseText,
+      route: input.route || undefined,
+      startAtISO: input.startAtISO,
+      intervalHours: Math.max(1, Math.round(input.intervalHours)),
+      durationDays: Math.max(1, Math.round(input.durationDays)),
+      note: input.note,
+      createdAtISO: now,
+      updatedAtISO: now
+    };
+    await updateLog((current) => ({
+      ...current,
+      medCourses: mergeById([course], current.medCourses)
+    }));
+    return course;
+  };
+
+  const deleteMedCourse = async (courseId: string) => {
+    if (!logState) return;
+    const now = nowISO();
+    await updateLog((current) => ({
+      ...current,
+      medCourses: current.medCourses.map((course) =>
+        course.id === courseId ? { ...course, deletedAtISO: now, updatedAtISO: now } : course
+      )
+    }));
+  };
+
+  const exportMedCourse = (course: MedCourse, member: Member) => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    const ics = buildCourseIcs(course, member.name);
+    const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const safeMember = sanitizeFilePart(member.name);
+    const safeMed = sanitizeFilePart(course.medName);
+    link.href = url;
+    link.download = `our-health-${safeMember}-${safeMed}-course.ics`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   const addSymptomEntry = async (
 
@@ -8582,7 +8868,8 @@ export default function App() {
 
         {members.map((member) => {
           const lastISO = getMemberLastActivityISO(member.id);
-          const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+          const nowTs = Date.now();
+          const cutoff = nowTs - 24 * 60 * 60 * 1000;
           const recentTemps = temps
             .filter(
               (entry) =>
@@ -8591,14 +8878,20 @@ export default function App() {
                 new Date(entry.atISO).getTime() >= cutoff
             )
             .sort((a, b) => new Date(b.atISO).getTime() - new Date(a.atISO).getTime());
-          const recentMeds = meds
-            .filter(
-              (entry) =>
-                entry.memberId === member.id &&
-                !entry.deletedAtISO &&
-                new Date(entry.atISO).getTime() >= cutoff
-            )
-            .sort((a, b) => new Date(b.atISO).getTime() - new Date(a.atISO).getTime());
+          const recentMedMap = new Map<string, MedEntry>();
+          meds.forEach((entry) => {
+            if (entry.memberId !== member.id || entry.deletedAtISO) return;
+            const at = new Date(entry.atISO).getTime();
+            if (at < cutoff) return;
+            const key = entry.medId || entry.medName.trim().toLowerCase();
+            const previous = recentMedMap.get(key);
+            if (!previous || new Date(previous.atISO).getTime() < at) {
+              recentMedMap.set(key, entry);
+            }
+          });
+          const recentMeds = Array.from(recentMedMap.values()).sort(
+            (a, b) => new Date(b.atISO).getTime() - new Date(a.atISO).getTime()
+          );
           return (
 
 
@@ -8672,7 +8965,9 @@ export default function App() {
                             {entry.medName}
                             {entry.doseText ? ` ${entry.doseText}` : ''}
                           </span>
-                          <span className="person-recent-time">{formatTime(entry.atISO)}</span>
+                          <span className="person-recent-time">
+                            {formatRelativeTime(entry.atISO, new Date(nowTs))} ({formatTime(entry.atISO)})
+                          </span>
                         </div>
                       ))}
                     </div>
@@ -8733,6 +9028,8 @@ export default function App() {
 
         meds={meds}
 
+        medCourses={medCourses}
+
         symptoms={symptoms}
 
         catalog={catalog}
@@ -8744,6 +9041,12 @@ export default function App() {
         onAddTemp={addTempEntry}
 
         onAddMed={addMedEntry}
+
+        onCreateMedCourse={createMedCourse}
+
+        onDeleteMedCourse={deleteMedCourse}
+
+        onExportMedCourse={exportMedCourse}
 
         onAddSymptom={addSymptomEntry}
 
@@ -9019,6 +9322,7 @@ export default function App() {
 
 
                 {driveAccountEmail && <span className="status-email">{driveAccountEmail}</span>}
+                <span className="status-message">Autosave writes every change to Drive when online.</span>
 
 
 

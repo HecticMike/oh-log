@@ -60,6 +60,15 @@ npm run build
    - Step 2: Create new shared files (pick a folder) or select existing `household.json` and `our-health-log.json`.
    - If the folder picker does not show your My Drive folders (e.g., only Shared drives appear), use the “Create files in My Drive (no folder selection)” button, then move the created files into the shared folder afterward; the file IDs stay the same.
 3. Add episodes, temperature entries, and medications. Changes save directly to Drive.
+4. For recurring antibiotics, open a member's **Logs -> Medication** section and create an antibiotic course (every N hours for D days), then export reminders as `.ics`.
+
+Autosave is immediate: each create/edit/delete writes to Drive while online. No manual save step is required.
+
+## Antibiotic reminders on iPhone
+1. Create an antibiotic course in the member Medication section.
+2. Tap `Export reminders (.ics)`.
+3. Open the downloaded `.ics` file on each iPhone and add it to Calendar.
+4. Events include reminders at dose time and 10 minutes before.
 
 ## Merge Behavior
 On save, the app writes with `If-Match` (ETag). If another device has updated the file, the app:

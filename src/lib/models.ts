@@ -51,6 +51,22 @@ export type MedCatalogItem = {
   updatedAtISO: string;
 };
 
+export type MedCourse = {
+  id: string;
+  memberId: string;
+  medId: string;
+  medName: string;
+  doseText: string;
+  route?: string;
+  startAtISO: string;
+  intervalHours: number;
+  durationDays: number;
+  note: string;
+  createdAtISO: string;
+  updatedAtISO: string;
+  deletedAtISO?: string | null;
+};
+
 export type MedEntry = {
   id: string;
   memberId: string;
@@ -84,6 +100,7 @@ export type LogData = {
   episodes: Episode[];
   temps: TempEntry[];
   meds: MedEntry[];
+  medCourses: MedCourse[];
   symptoms: SymptomEntry[];
   medCatalog: MedCatalogItem[];
 };
@@ -113,6 +130,7 @@ export const emptyLog = (): LogData => ({
   episodes: [],
   temps: [],
   meds: [],
+  medCourses: [],
   symptoms: [],
   medCatalog: []
 });
@@ -220,6 +238,28 @@ const normalizeMedEntry = (value: Partial<MedEntry>, episodeMap: Map<string, str
   };
 };
 
+const normalizeMedCourse = (value: Partial<MedCourse>, fallbackISO: string): MedCourse => {
+  const now = fallbackISO || nowISO();
+  const createdAtISO = asString(value.createdAtISO, asString(value.updatedAtISO, now));
+  const updatedAtISO = asString(value.updatedAtISO, createdAtISO);
+  const deletedAtISO = typeof value.deletedAtISO === 'string' ? value.deletedAtISO : value.deletedAtISO === null ? null : null;
+  return {
+    id: asString(value.id, createId()),
+    memberId: asString(value.memberId, 'member-1'),
+    medId: asString(value.medId),
+    medName: asString(value.medName, 'Medication'),
+    doseText: asString(value.doseText),
+    route: asString(value.route),
+    startAtISO: asString(value.startAtISO, now),
+    intervalHours: Math.max(1, Math.round(asNumber(value.intervalHours, 8))),
+    durationDays: Math.max(1, Math.round(asNumber(value.durationDays, 7))),
+    note: asString(value.note),
+    createdAtISO,
+    updatedAtISO,
+    deletedAtISO
+  };
+};
+
 const normalizeSymptomEntry = (
   value: Partial<SymptomEntry>,
   episodeMap: Map<string, string>,
@@ -277,6 +317,9 @@ export const ensureLogData = (value: unknown): LogData => {
     ),
     meds: asArray<Partial<MedEntry>>(data.meds).map((entry) =>
       normalizeMedEntry(entry, episodeMap, logUpdatedAtISO)
+    ),
+    medCourses: asArray<Partial<MedCourse>>(data.medCourses).map((entry) =>
+      normalizeMedCourse(entry, logUpdatedAtISO)
     ),
     symptoms: asArray<Partial<SymptomEntry>>(data.symptoms).map((entry) =>
       normalizeSymptomEntry(entry, episodeMap, logUpdatedAtISO)
@@ -346,6 +389,7 @@ export const mergeLogData = (local: LogData, remote: LogData): LogData => ({
   episodes: mergeById(local.episodes, remote.episodes),
   temps: mergeById(local.temps, remote.temps),
   meds: mergeById(local.meds, remote.meds),
+  medCourses: mergeById(local.medCourses, remote.medCourses),
   symptoms: mergeById(local.symptoms, remote.symptoms),
   medCatalog: mergeById(local.medCatalog, remote.medCatalog)
 });
