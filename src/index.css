@@ -785,6 +785,18 @@ textarea:focus-visible {
   gap: 0.65rem;
 }
 
+.log-form-med {
+  order: 1;
+}
+
+.log-form-temp {
+  order: 2;
+}
+
+.log-form-symptom {
+  order: 3;
+}
+
 .temp-nudges {
   display: flex;
   flex-wrap: wrap;
@@ -1313,13 +1325,7 @@ textarea:focus-visible {
   align-items: center;
 }
 
-.member-color-field {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.member-color-field input {
+.member-color-input {
   width: 48px;
   height: 38px;
   padding: 0;

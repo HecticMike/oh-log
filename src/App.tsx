@@ -949,21 +949,22 @@ const LogEntryForms = ({
   }, [locked, ongoingEpisodeId, tempEpisodeId, symptomEpisodeId, medEpisodeId]);
 
   useEffect(() => {
+    setSelectedMedId(null);
     if (lastMedEntry) {
-      setMedName((prev) => prev || lastMedEntry.medName);
-      setMedDose((prev) => prev || lastMedEntry.doseText);
-      setMedRoute((prev) => prev || (lastMedEntry.route ?? ''));
-      if (!selectedMedId) {
-        const match = catalog.find(
-          (item) => item.name.toLowerCase() === lastMedEntry.medName.toLowerCase()
-        );
-        if (match) setSelectedMedId(match.id);
-      }
+      setMedName(lastMedEntry.medName);
+      setMedDose(lastMedEntry.doseText);
+      setMedRoute(lastMedEntry.route ?? '');
+    } else {
+      setMedName('');
+      setMedDose('');
+      setMedRoute('');
     }
-    if (lastSymptomEntry && !symptomText) {
+    if (lastSymptomEntry) {
       setSymptomText(lastSymptomEntry.symptoms.join(', '));
+    } else {
+      setSymptomText('');
     }
-  }, [member.id, lastMedEntry, lastSymptomEntry, selectedMedId, symptomText, catalog]);
+  }, [member.id, lastMedEntry, lastSymptomEntry]);
 
 
 
@@ -1389,7 +1390,7 @@ const LogEntryForms = ({
 
 
 
-        <div className="log-form" id={`temp-form-${fieldPrefix}`}>
+        <div className="log-form log-form-temp" id={`temp-form-${fieldPrefix}`}>
 
 
 
@@ -1538,7 +1539,7 @@ const LogEntryForms = ({
 
 
 
-        <div className="log-form" id={`symptom-form-${fieldPrefix}`}>
+        <div className="log-form log-form-symptom" id={`symptom-form-${fieldPrefix}`}>
 
 
 
@@ -1679,7 +1680,7 @@ const LogEntryForms = ({
 
 
 
-        <div className="log-form" id={`med-form-${fieldPrefix}`}>
+        <div className="log-form log-form-med" id={`med-form-${fieldPrefix}`}>
 
 
 
@@ -4374,13 +4375,10 @@ const PersonView = ({
           className="primary"
           onClick={() => {
             setTab('logs');
-            focusQuickField(`temp-value-${member.id}`, {
-              scrollId: `temp-form-${member.id}`,
-              allowFocus: false
-            });
+            focusQuickField(`med-name-${member.id}`, { scrollId: `med-form-${member.id}` });
           }}
         >
-          + Temp
+          + Medication
         </button>
         <button
           type="button"
@@ -4397,10 +4395,13 @@ const PersonView = ({
           className="ghost"
           onClick={() => {
             setTab('logs');
-            focusQuickField(`med-name-${member.id}`, { scrollId: `med-form-${member.id}` });
+            focusQuickField(`temp-value-${member.id}`, {
+              scrollId: `temp-form-${member.id}`,
+              allowFocus: false
+            });
           }}
         >
-          + Medication
+          + Temp
         </button>
         <span className="quick-add-hint">Tap to start a log entry fast.</span>
       </div>
@@ -6613,19 +6614,12 @@ const SettingsView = ({
 
                 />
 
-                <div className="member-color-field">
-
-                  <input
-
-                    type="color"
-
-                    value={member.accentColor}
-
-                    onChange={(event) => updateDraft(index, { accentColor: event.target.value })}
-
-                  />
-
-                </div>
+                <input
+                  className="member-color-input"
+                  type="color"
+                  value={member.accentColor}
+                  onChange={(event) => updateDraft(index, { accentColor: event.target.value })}
+                />
 
               </div>
 
