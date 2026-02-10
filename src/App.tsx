@@ -144,6 +144,24 @@ const formatDateTime = (iso?: string | null) => (iso ? new Date(iso).toLocaleStr
 const formatDate = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString() : '');
 const formatTime = (iso?: string | null) =>
   iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+const formatPeopleCardDateTime = (iso?: string | null) => {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (!Number.isFinite(date.getTime())) return '';
+  const now = new Date();
+  const isToday =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+  const timeLabel = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (isToday) return `today ${timeLabel}`;
+  const dateLabel = date.toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: '2-digit'
+  });
+  return `${dateLabel} ${timeLabel}`;
+};
 const isRecentlyCreated = (iso?: string | null, windowMs = 20_000) => {
   if (!iso) return false;
   const ts = new Date(iso).getTime();
@@ -4762,10 +4780,10 @@ const PersonView = ({
           {section === 'symptoms' && (
             <div className="log-columns single-column">
               <div className="log-block">
-                <div className="section-header">
-                  <h3>Symptoms</h3>
-                  <p>Logged separately from illnesses.</p>
-                </div>
+              <div className="section-header">
+                <h3>Symptoms</h3>
+                <p>Logged separately from illnesses. Use Edit to link or unlink any symptom entry.</p>
+              </div>
                 {memberSymptoms.length === 0 && (
                   <div className="empty-state">
                     <p className="empty">No symptom entries yet.</p>
@@ -8899,7 +8917,7 @@ export default function App() {
                   {recentTemps.length} temps (24h)
                 </span>
               </div>
-              <div className="person-sub">{lastISO ? `Last log ${formatDateTime(lastISO)}` : 'No logs yet'}</div>
+              <div className="person-sub">{lastISO ? `Last log ${formatPeopleCardDateTime(lastISO)}` : 'No logs yet'}</div>
               {recentMeds.length > 0 && (
                 <div className="person-recent compact">
                   {recentMeds.slice(0, 2).map((entry) => (

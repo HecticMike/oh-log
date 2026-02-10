@@ -1280,6 +1280,20 @@ textarea:focus-visible {
     min-height: 48px;
     padding: 0.3rem;
   }
+
+  .workspace-nav {
+    display: flex;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  .workspace-nav button {
+    flex: 0 0 auto;
+    min-width: 108px;
+    white-space: nowrap;
+  }
 }
 
 @media (max-width: 480px) {
@@ -1307,6 +1321,7 @@ textarea:focus-visible {
     min-height: 40px;
     font-size: 0.72rem;
     padding: 0.25rem 0.35rem;
+    min-width: 96px;
   }
 
   .form-grid input,
