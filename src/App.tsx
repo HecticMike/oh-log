@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type TouchEvent } from 'react';
 
 import * as XLSX from 'xlsx';
+import * as Dialog from '@radix-ui/react-dialog';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 
 import './index.css';
 
@@ -142,6 +144,12 @@ const formatDateTime = (iso?: string | null) => (iso ? new Date(iso).toLocaleStr
 const formatDate = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString() : '');
 const formatTime = (iso?: string | null) =>
   iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+const isRecentlyCreated = (iso?: string | null, windowMs = 20_000) => {
+  if (!iso) return false;
+  const ts = new Date(iso).getTime();
+  if (!Number.isFinite(ts)) return false;
+  return Date.now() - ts <= windowMs;
+};
 const sanitizeFilePart = (value: string) =>
   value
     .trim()
@@ -227,10 +235,25 @@ const toISOFromDateTime = (dateValue: string, timeValue: string) => {
   return date.toISOString();
 };
 
-type MemberTab = 'logs' | 'calendar' | 'illness' | 'insights';
+type MemberSection = 'medication' | 'temperature' | 'symptoms' | 'illness' | 'calendar' | 'more';
 
-const parseMemberTab = (value: string | null): MemberTab | undefined =>
-  value === 'logs' || value === 'calendar' || value === 'illness' || value === 'insights' ? value : undefined;
+const parseMemberSection = (value: string | null): MemberSection | undefined =>
+  value === 'medication' ||
+  value === 'temperature' ||
+  value === 'symptoms' ||
+  value === 'illness' ||
+  value === 'calendar' ||
+  value === 'more'
+    ? value
+    : undefined;
+
+const legacyTabToSection = (tab: string | null): MemberSection | undefined => {
+  if (tab === 'logs') return 'medication';
+  if (tab === 'calendar') return 'calendar';
+  if (tab === 'illness') return 'illness';
+  if (tab === 'insights') return 'more';
+  return undefined;
+};
 
 const routeFromHashString = (rawHash: string) => {
   const hash = rawHash.replace('#', '');
@@ -240,8 +263,8 @@ const routeFromHashString = (rawHash: string) => {
   if (hash.startsWith('person=')) {
     const params = new URLSearchParams(hash);
     const memberId = params.get('person') ?? hash.replace('person=', '').split('&')[0];
-    const tab = parseMemberTab(params.get('tab'));
-    return { page: 'person', memberId, tab } as const;
+    const section = parseMemberSection(params.get('section')) ?? legacyTabToSection(params.get('tab')) ?? 'medication';
+    return { page: 'person', memberId, section } as const;
   }
 
   if (hash.startsWith('episode=')) {
@@ -949,22 +972,13 @@ const LogEntryForms = ({
   }, [locked, ongoingEpisodeId, tempEpisodeId, symptomEpisodeId, medEpisodeId]);
 
   useEffect(() => {
+    // Keep quick-log fields writable; avoid re-applying the last medication on each render.
     setSelectedMedId(null);
-    if (lastMedEntry) {
-      setMedName(lastMedEntry.medName);
-      setMedDose(lastMedEntry.doseText);
-      setMedRoute(lastMedEntry.route ?? '');
-    } else {
-      setMedName('');
-      setMedDose('');
-      setMedRoute('');
-    }
-    if (lastSymptomEntry) {
-      setSymptomText(lastSymptomEntry.symptoms.join(', '));
-    } else {
-      setSymptomText('');
-    }
-  }, [member.id, lastMedEntry, lastSymptomEntry]);
+    setMedName('');
+    setMedDose('');
+    setMedRoute('');
+    setSymptomText('');
+  }, [member.id]);
 
 
 
@@ -2319,7 +2333,9 @@ const TempLogList = ({ entries, episodes, onUpdate, onDelete }: TempLogListProps
             return (
               <div
                 key={entry.id}
-                className={`log-row ${swipeOpenId === entry.id ? 'swipe-open' : ''}`}
+                className={`log-row ${swipeOpenId === entry.id ? 'swipe-open' : ''} ${
+                  isRecentlyCreated(entry.createdAtISO) ? 'fresh' : ''
+                }`}
                 onTouchStart={handleTouchStart(entry.id)}
                 onTouchMove={handleTouchMove(entry.id)}
                 onTouchEnd={handleTouchEnd}
@@ -2690,7 +2706,9 @@ const MedLogList = ({ entries, episodes, onUpdate, onDelete, onUpsertCatalog }: 
             return (
               <div
                 key={entry.id}
-                className={`log-row ${swipeOpenId === entry.id ? 'swipe-open' : ''}`}
+                className={`log-row ${swipeOpenId === entry.id ? 'swipe-open' : ''} ${
+                  isRecentlyCreated(entry.createdAtISO) ? 'fresh' : ''
+                }`}
                 onTouchStart={handleTouchStart(entry.id)}
                 onTouchMove={handleTouchMove(entry.id)}
                 onTouchEnd={handleTouchEnd}
@@ -2950,6 +2968,258 @@ const MedicationCourseSection = ({
         })}
       </div>
     </div>
+  );
+};
+
+type WorkspaceSectionNavProps = {
+  active: MemberSection;
+  onChange: (section: MemberSection) => void;
+};
+
+const WorkspaceSectionNav = ({ active, onChange }: WorkspaceSectionNavProps) => {
+  const items: Array<{ id: MemberSection; label: string }> = [
+    { id: 'medication', label: 'Medication' },
+    { id: 'temperature', label: 'Temperature' },
+    { id: 'symptoms', label: 'Symptoms' },
+    { id: 'illness', label: 'Illness' },
+    { id: 'calendar', label: 'Calendar' },
+    { id: 'more', label: 'More' }
+  ];
+  return (
+    <div className="workspace-nav" role="tablist" aria-label="Member sections">
+      {items.map((item) => (
+        <button
+          key={item.id}
+          type="button"
+          className={active === item.id ? 'active' : ''}
+          onClick={() => onChange(item.id)}
+          role="tab"
+          aria-selected={active === item.id}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
+  );
+};
+
+type ComposerMode = 'medication' | 'temperature' | 'symptoms';
+
+type LogComposerSheetProps = {
+  open: boolean;
+  mode: ComposerMode;
+  member: Member;
+  episodes: Episode[];
+  catalog: MedCatalogItem[];
+  recentMedicationChoices: string[];
+  defaultEpisodeId: string | null;
+  onOpenChange: (open: boolean) => void;
+  onAddTemp: (memberId: string, tempC: number, atISO: string, note: string, episodeId: string | null) => Promise<void>;
+  onAddMed: (
+    memberId: string,
+    catalogItem: MedCatalogItem,
+    doseText: string,
+    atISO: string,
+    route: string,
+    note: string,
+    episodeId: string | null
+  ) => Promise<void>;
+  onAddSymptom: (
+    memberId: string,
+    symptoms: string[],
+    atISO: string,
+    note: string,
+    episodeId: string | null
+  ) => Promise<void>;
+  onUpsertCatalog: (name: string) => Promise<MedCatalogItem | null>;
+};
+
+const LogComposerSheet = ({
+  open,
+  mode,
+  member,
+  episodes,
+  catalog,
+  recentMedicationChoices,
+  defaultEpisodeId,
+  onOpenChange,
+  onAddTemp,
+  onAddMed,
+  onAddSymptom,
+  onUpsertCatalog
+}: LogComposerSheetProps) => {
+  const reduceMotion = useReducedMotion();
+  const [episodeId, setEpisodeId] = useState<string | null>(defaultEpisodeId);
+  const [timeValue, setTimeValue] = useState(toLocalTimeInput(nowISO()));
+  const [tempValue, setTempValue] = useState('');
+  const [symptomText, setSymptomText] = useState('');
+  const [medName, setMedName] = useState('');
+  const [medDose, setMedDose] = useState('');
+  const [route, setRoute] = useState('');
+  const [note, setNote] = useState('');
+
+  useEffect(() => {
+    if (!open) return;
+    setEpisodeId(defaultEpisodeId);
+    setTimeValue(toLocalTimeInput(nowISO()));
+    setTempValue('');
+    setSymptomText('');
+    setMedName('');
+    setMedDose('');
+    setRoute('');
+    setNote('');
+  }, [open, mode, member.id, defaultEpisodeId]);
+
+  const handleSubmit = async () => {
+    if (mode === 'temperature') {
+      const parsed = Number(tempValue);
+      if (!Number.isFinite(parsed)) return;
+      await onAddTemp(member.id, parsed, toISOFromTime(timeValue), note.trim(), episodeId);
+      onOpenChange(false);
+      return;
+    }
+    if (mode === 'symptoms') {
+      const parsed = symptomText
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+      if (parsed.length === 0) return;
+      await onAddSymptom(member.id, parsed, toISOFromTime(timeValue), note.trim(), episodeId);
+      onOpenChange(false);
+      return;
+    }
+    const catalogItem = await onUpsertCatalog(medName);
+    if (!catalogItem) return;
+    await onAddMed(member.id, catalogItem, medDose.trim(), toISOFromTime(timeValue), route.trim(), note.trim(), episodeId);
+    onOpenChange(false);
+  };
+
+  const title = mode === 'medication' ? 'Add medication' : mode === 'temperature' ? 'Add temperature' : 'Add symptoms';
+
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <AnimatePresence>
+        {open && (
+          <Dialog.Portal forceMount>
+            <Dialog.Overlay asChild forceMount>
+              <motion.div
+                className="composer-overlay"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: reduceMotion ? 0 : 0.16 }}
+              />
+            </Dialog.Overlay>
+            <Dialog.Content asChild forceMount>
+              <motion.div
+                className="composer-sheet"
+                initial={{ y: reduceMotion ? 0 : 28, opacity: reduceMotion ? 1 : 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: reduceMotion ? 0 : 28, opacity: reduceMotion ? 1 : 0 }}
+                transition={{ duration: reduceMotion ? 0 : 0.18 }}
+              >
+                <div className="composer-sheet-header">
+                  <Dialog.Title>{title}</Dialog.Title>
+                  <Dialog.Close asChild>
+                    <button type="button" className="ghost">Close</button>
+                  </Dialog.Close>
+                </div>
+                {mode === 'medication' && recentMedicationChoices.length > 0 && (
+                  <div className="composer-quick-picks" aria-label="Recent medication quick picks">
+                    {recentMedicationChoices.map((name) => (
+                      <button key={name} type="button" className="chip" onClick={() => setMedName(name)}>
+                        {name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="form-grid">
+                  {mode === 'medication' && (
+                    <>
+                      <label>
+                        Medication
+                        <input
+                          list={`composer-catalog-${member.id}`}
+                          value={medName}
+                          onChange={(event) => setMedName(event.target.value)}
+                          autoComplete="off"
+                          placeholder="Paracetamol"
+                        />
+                        <datalist id={`composer-catalog-${member.id}`}>
+                          {catalog.map((item) => (
+                            <option key={item.id} value={item.name} />
+                          ))}
+                        </datalist>
+                      </label>
+                      <label>
+                        Dose
+                        <input value={medDose} onChange={(event) => setMedDose(event.target.value)} placeholder="500 mg" />
+                      </label>
+                      <label>
+                        Route
+                        <input value={route} onChange={(event) => setRoute(event.target.value)} placeholder="Oral" />
+                      </label>
+                    </>
+                  )}
+                  {mode === 'temperature' && (
+                    <label>
+                      Temp (C)
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={tempValue}
+                        onChange={(event) => setTempValue(event.target.value)}
+                        placeholder="37.8"
+                      />
+                    </label>
+                  )}
+                  {mode === 'symptoms' && (
+                    <label className="full">
+                      Symptoms
+                      <input
+                        value={symptomText}
+                        onChange={(event) => setSymptomText(event.target.value)}
+                        placeholder="Fever, cough"
+                      />
+                    </label>
+                  )}
+                  <label>
+                    Time
+                    <input type="time" value={timeValue} onChange={(event) => setTimeValue(event.target.value)} />
+                  </label>
+                  <label>
+                    Link illness (optional)
+                    <select
+                      value={episodeId ?? ''}
+                      onChange={(event) => setEpisodeId(event.target.value ? event.target.value : null)}
+                    >
+                      <option value="">Unlinked</option>
+                      {episodes.filter((item) => !item.deletedAtISO).map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.category} - {formatDate(item.startedAtISO)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="full">
+                    Note
+                    <input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Optional" />
+                  </label>
+                </div>
+                <div className="composer-sheet-actions">
+                  <button type="button" className="primary" onClick={handleSubmit}>
+                    Save
+                  </button>
+                  <Dialog.Close asChild>
+                    <button type="button" className="ghost">Cancel</button>
+                  </Dialog.Close>
+                </div>
+              </motion.div>
+            </Dialog.Content>
+          </Dialog.Portal>
+        )}
+      </AnimatePresence>
+    </Dialog.Root>
   );
 };
 
@@ -3236,7 +3506,9 @@ const SymptomLogList = ({ entries, episodes, onUpdate, onDelete }: SymptomLogLis
             return (
               <div
                 key={entry.id}
-                className={`log-row ${swipeOpenId === entry.id ? 'swipe-open' : ''}`}
+                className={`log-row ${swipeOpenId === entry.id ? 'swipe-open' : ''} ${
+                  isRecentlyCreated(entry.createdAtISO) ? 'fresh' : ''
+                }`}
                 onTouchStart={handleTouchStart(entry.id)}
                 onTouchMove={handleTouchMove(entry.id)}
                 onTouchEnd={handleTouchEnd}
@@ -3815,7 +4087,7 @@ type PersonViewProps = {
 
   catalog: MedCatalogItem[];
 
-  initialTab?: MemberTab;
+  initialSection?: MemberSection;
 
   onCreateEpisode: (member: Member) => Promise<void>;
 
@@ -3935,10 +4207,6 @@ type PersonViewProps = {
 
 
 
-  onToggleFavorite: (itemId: string) => Promise<void>;
-
-
-
   onExport: (member: Member) => void;
 
 
@@ -3987,7 +4255,7 @@ const PersonView = ({
 
 
 
-  initialTab,
+  initialSection,
 
 
 
@@ -4042,10 +4310,6 @@ const PersonView = ({
 
 
 
-  onToggleFavorite,
-
-
-
   onExport,
 
 
@@ -4075,7 +4339,8 @@ const PersonView = ({
 
 
 
-  const [tab, setTab] = useState<MemberTab>(initialTab ?? 'logs');
+  const [section, setSection] = useState<MemberSection>(initialSection ?? 'medication');
+  const reduceMotion = useReducedMotion();
 
 
 
@@ -4084,8 +4349,8 @@ const PersonView = ({
 
 
   useEffect(() => {
-    setTab(initialTab ?? 'logs');
-  }, [member.id, initialTab]);
+    setSection(initialSection ?? 'medication');
+  }, [member.id, initialSection]);
 
 
 
@@ -4106,42 +4371,32 @@ const PersonView = ({
     [memberEpisodes]
   );
 
-  const focusQuickField = (
-    fieldId: string,
-    options?: { scrollId?: string; allowFocus?: boolean }
-  ) => {
-    if (typeof document === 'undefined') return;
-    const scrollTarget = options?.scrollId ? document.getElementById(options.scrollId) : null;
-    const el = document.getElementById(fieldId) as HTMLInputElement | null;
-    const target = scrollTarget ?? el;
-    if (target) {
-      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-    const allowFocus = options?.allowFocus ?? true;
-    const smallScreen = typeof window !== 'undefined' && window.innerWidth <= 480;
-    if (el && allowFocus && !smallScreen) {
-      el.focus();
-      if (typeof el.select === 'function') {
-        el.select();
-      }
-    }
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [composerMode, setComposerMode] = useState<ComposerMode>('medication');
+
+  const setSectionAndRoute = (next: MemberSection) => {
+    setSection(next);
+    onNavigate(`#person=${member.id}&section=${next}`);
+  };
+
+  const openComposer = (mode: ComposerMode) => {
+    setComposerMode(mode);
+    const nextSection: MemberSection =
+      mode === 'medication' ? 'medication' : mode === 'temperature' ? 'temperature' : 'symptoms';
+    setSectionAndRoute(nextSection);
+    setComposerOpen(true);
   };
 
   const handleQuickAdd = (type: 'temp' | 'symptom' | 'med') => {
-    setTab('logs');
-    onNavigate(`#person=${member.id}&tab=logs`);
     if (type === 'temp') {
-      focusQuickField(`temp-value-${member.id}`, {
-        scrollId: `temp-form-${member.id}`,
-        allowFocus: false
-      });
+      openComposer('temperature');
       return;
     }
     if (type === 'symptom') {
-      focusQuickField(`symptom-text-${member.id}`, { scrollId: `symptom-form-${member.id}` });
+      openComposer('symptoms');
       return;
     }
-    focusQuickField(`med-name-${member.id}`, { scrollId: `med-form-${member.id}` });
+    openComposer('medication');
   };
 
 
@@ -4161,6 +4416,23 @@ const PersonView = ({
     () => meds.filter((entry) => entry.memberId === member.id && !entry.deletedAtISO),
     [meds, member.id]
   );
+
+  const quickMedicationChoices = useMemo(() => {
+    const seen = new Set<string>();
+    const choices: string[] = [];
+    memberMeds
+      .slice()
+      .sort((a, b) => new Date(b.atISO).getTime() - new Date(a.atISO).getTime())
+      .forEach((entry) => {
+        const name = entry.medName.trim();
+        if (!name) return;
+        const key = name.toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+        choices.push(name);
+      });
+    return choices.slice(0, 5);
+  }, [memberMeds]);
 
   const memberCourses = useMemo(
     () =>
@@ -4296,7 +4568,7 @@ const PersonView = ({
 
 
 
-    <section className="panel person-panel" style={accentStyle}>
+    <section className={`panel person-panel member-section-${section}`} style={accentStyle}>
 
 
 
@@ -4373,81 +4645,42 @@ const PersonView = ({
         <button
           type="button"
           className="primary"
-          onClick={() => {
-            setTab('logs');
-            focusQuickField(`med-name-${member.id}`, { scrollId: `med-form-${member.id}` });
-          }}
+          onClick={() => openComposer('medication')}
         >
           + Medication
         </button>
         <button
           type="button"
           className="ghost"
-          onClick={() => {
-            setTab('logs');
-            focusQuickField(`symptom-text-${member.id}`, { scrollId: `symptom-form-${member.id}` });
-          }}
+          onClick={() => openComposer('temperature')}
         >
-          + Symptoms
+          + Temperature
         </button>
         <button
           type="button"
           className="ghost"
-          onClick={() => {
-            setTab('logs');
-            focusQuickField(`temp-value-${member.id}`, {
-              scrollId: `temp-form-${member.id}`,
-              allowFocus: false
-            });
-          }}
+          onClick={() => openComposer('symptoms')}
         >
-          + Temp
+          + Symptoms
         </button>
-        <span className="quick-add-hint">Tap to start a log entry fast.</span>
+        <span className="quick-add-hint">Fast logging opens in a compact bottom sheet.</span>
       </div>
 
-      <LogEntryForms
+      <WorkspaceSectionNav active={section} onChange={setSectionAndRoute} />
 
-
-
+      <LogComposerSheet
+        open={composerOpen}
+        mode={composerMode}
         member={member}
-
-
-
         episodes={memberEpisodes}
-        temps={memberTemps}
-        symptoms={memberSymptoms}
-
-
-
-        meds={memberMeds}
-
-
-
         catalog={catalog}
-
-
-
+        recentMedicationChoices={quickMedicationChoices}
+        defaultEpisodeId={ongoingEpisode?.id ?? null}
+        onOpenChange={setComposerOpen}
         onAddTemp={onAddTemp}
-
-
-
         onAddMed={onAddMed}
-
-
-
         onAddSymptom={onAddSymptom}
-
-
-
         onUpsertCatalog={onUpsertCatalog}
-
-
-
-        onToggleFavorite={onToggleFavorite}
-
-
-
       />
 
 
@@ -4456,478 +4689,201 @@ const PersonView = ({
 
 
 
-      <div className="tab-bar">
-
-
-
- <button
-          type="button"
-          className={tab === 'logs' ? 'active' : ''}
-          onClick={() => {
-            setTab('logs');
-            onNavigate(`#person=${member.id}&tab=logs`);
-          }}
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={`member-section-${section}`}
+          className="workspace-section"
+          initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: reduceMotion ? 0 : -8 }}
+          transition={{ duration: reduceMotion ? 0 : 0.16 }}
         >
-
-
-
-          Logs
-
-
-
-        </button>
-
-
-
- <button
-          type="button"
-          className={tab === 'calendar' ? 'active' : ''}
-          onClick={() => {
-            setTab('calendar');
-            onNavigate(`#person=${member.id}&tab=calendar`);
-          }}
-        >
-
-
-
-          Calendar
-
-
-
-        </button>
-
-
-
- 
-        <button
-          type="button"
-          className={tab === 'insights' ? 'active' : ''}
-          onClick={() => {
-            setTab('insights');
-            onNavigate(`#person=${member.id}&tab=insights`);
-          }}
-        >
-          Insights
-        </button>
-
-<button
-          type="button"
-          className={tab === 'illness' ? 'active' : ''}
-          onClick={() => {
-            setTab('illness');
-            onNavigate(`#person=${member.id}&tab=illness`);
-          }}
-        >
-
-
-
-          Illnesses
-
-
-
-        </button>
-
-
-
-      </div>
-
-
-
-
-
-
-
-      {tab === 'logs' && (
-
-
-
-        <div className="log-columns">
-
-
-
-          <div className="log-block">
-
-
-
-            <div className="section-header">
-
-
-
-              <h3>Medication</h3>
-
-
-
-              <p>Stored in your Drive catalog.</p>
-
-
-
-            </div>
-
-
-
-            <MedicationCourseSection
-              member={member}
-              catalog={catalog}
-              courses={memberCourses}
-              onUpsertCatalog={onUpsertCatalog}
-              onCreateCourse={onCreateMedCourse}
-              onDeleteCourse={onDeleteMedCourse}
-              onExportCourse={onExportMedCourse}
-            />
-            {memberMeds.length === 0 && (
-              <div className="empty-state">
-                <p className="empty">No medication entries yet.</p>
-                <button
-                  type="button"
-                  className="ghost"
-                  onClick={() => focusQuickField(`med-name-${member.id}`)}
-                >
-                  Add first medication
-                </button>
-              </div>
-            )}
-
-
-
-            <MedLogList
-              entries={memberMeds}
-              episodes={memberEpisodes}
-              onUpdate={onUpdateMed}
-              onDelete={onDeleteMed}
-              onUpsertCatalog={onUpsertCatalog}
-            />
-
-
-
-          </div>
-
-
-
-          <div className="log-block">
-
-
-
-            <div className="section-header">
-
-
-
-              <h3>Temperatures</h3>
-
-
-
-              <p>Fever threshold: {FEVER_THRESHOLD.toFixed(1)} C</p>
-
-
-
-            </div>
-
-
-
-            <TemperatureChart entries={memberTemps} />
-            {memberTemps.length === 0 && (
-              <div className="empty-state">
-                <p className="empty">No temperature entries yet.</p>
-                <button
-                  type="button"
-                  className="ghost"
-                  onClick={() =>
-                    focusQuickField(`temp-value-${member.id}`, {
-                      scrollId: `temp-form-${member.id}`,
-                      allowFocus: false
-                    })
-                  }
-                >
-                  Add first temperature
-                </button>
-              </div>
-            )}
-
-            <TempLogList
-
-
-
-              entries={memberTemps}
-
-
-
-              episodes={memberEpisodes}
-
-
-
-              onUpdate={onUpdateTemp}
-
-
-
-              onDelete={onDeleteTemp}
-
-
-
-            />
-
-
-
-          </div>
-
-
-
-          <div className="log-block">
-
-
-
-            <div className="section-header">
-
-
-
-              <h3>Symptoms</h3>
-
-
-
-              <p>Logged separately from illnesses.</p>
-
-
-
-            </div>
-
-
-
-            {memberSymptoms.length === 0 && (
-              <div className="empty-state">
-                <p className="empty">No symptom entries yet.</p>
-                <button
-                  type="button"
-                  className="ghost"
-                  onClick={() => focusQuickField(`symptom-text-${member.id}`)}
-                >
-                  Add first symptoms
-                </button>
-              </div>
-            )}
-
-            <SymptomLogList
-
-
-
-              entries={memberSymptoms}
-
-
-
-              episodes={memberEpisodes}
-
-
-
-              onUpdate={onUpdateSymptom}
-
-
-
-              onDelete={onDeleteSymptom}
-
-
-
-            />
-
-
-
-          </div>
-
-
-
-        </div>
-
-
-
-      )}
-
-
-
-
-
-
-
-      {tab === 'calendar' && (
-        <CalendarView member={member} temps={memberTemps} meds={memberMeds} onQuickAdd={handleQuickAdd} />
-      )}
-
-
-
-
-
-
-
-
-      {tab === 'insights' && (
-        <div className="insights">
-          <div className="insight-summary">
-            <div className="insight-card">
-              <div className="insight-label">Average temp</div>
-              <div className="insight-value">
-                {avgTempOverall !== null ? `${avgTempOverall.toFixed(1)} C` : '-'}
-              </div>
-              <div className="insight-sub">{memberTemps.length} readings</div>
-            </div>
-            <div className="insight-card">
-              <div className="insight-label">Fever days</div>
-              <div className="insight-value">{feverDaysOverall}</div>
-              <div className="insight-sub">Temp {'>='} {FEVER_THRESHOLD.toFixed(1)} C</div>
-            </div>
-            <div className="insight-card">
-              <div className="insight-label">Meds (30 days)</div>
-              <div className="insight-value">{medCountLast30}</div>
-              <div className="insight-sub">Last 30 days</div>
-            </div>
-          </div>
-
-          <div className="insight-actions">
-            <button type="button" className="ghost" onClick={handleDownloadInsights}>
-              Download charts (SVG)
-            </button>
-            <span className="insight-note">Charts export as SVG for Excel or Keynote.</span>
-          </div>
-
-          <div className="insight-grid">
-            <div className="insight-card">
-              <MiniBarChart
-                id="insight-avg-temp"
-                title="Avg temp by illness"
-                data={avgTempByEpisode}
-                valueSuffix=" C"
-                emptyLabel="No linked temperatures yet."
-              />
-            </div>
-            <div className="insight-card">
-              <MiniBarChart
-                id="insight-fever-days"
-                title="Fever days by illness"
-                data={feverDaysByEpisode}
-                emptyLabel="No fever days yet."
-              />
-            </div>
-            <div className="insight-card">
-              <MiniBarChart
-                id="insight-med-frequency"
-                title="Meds in last 30 days"
-                data={medFrequency}
-                emptyLabel="No meds in last 30 days."
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {tab === 'illness' && (
-
-
-
-        <div className="episode-list">
-
-
-
-          <div className="section-header">
-
-
-
-            <h3>Illness episodes</h3>
-
-
-
-            <button type="button" className="primary" onClick={() => onCreateEpisode(member)}>
-
-
-
-              Add illness
-
-
-
-            </button>
-
-
-
-          </div>
-
-
-
-          {memberEpisodes.length === 0 && <p className="empty">No illness episodes yet.</p>}
-
-
-
-          {memberEpisodes.map((episode) => (
-
-
-
-            <div key={episode.id} className="episode-card">
-
-
-
-              <div>
-
-
-
-                <div className="episode-title">{episode.category}</div>
-
-
-
-                <div className="episode-sub">
-
-                  <span className="episode-meta">Severity {episode.severity}</span>
-
-                  <span className="episode-meta episode-status">
-
-                    {episode.endedAtISO ? `Closed ${formatDate(episode.endedAtISO)}` : 'Ongoing'}
-
-                  </span>
-
+          {section === 'medication' && (
+            <div className="log-columns single-column">
+              <div className="log-block">
+                <div className="section-header">
+                  <h3>Medication</h3>
+                  <p>Stored in your Drive catalog.</p>
                 </div>
-
-
-
+                <MedicationCourseSection
+                  member={member}
+                  catalog={catalog}
+                  courses={memberCourses}
+                  onUpsertCatalog={onUpsertCatalog}
+                  onCreateCourse={onCreateMedCourse}
+                  onDeleteCourse={onDeleteMedCourse}
+                  onExportCourse={onExportMedCourse}
+                />
+                {memberMeds.length === 0 && (
+                  <div className="empty-state">
+                    <p className="empty">No medication entries yet.</p>
+                    <button type="button" className="ghost" onClick={() => openComposer('medication')}>
+                      Add first medication
+                    </button>
+                  </div>
+                )}
+                <MedLogList
+                  entries={memberMeds}
+                  episodes={memberEpisodes}
+                  onUpdate={onUpdateMed}
+                  onDelete={onDeleteMed}
+                  onUpsertCatalog={onUpsertCatalog}
+                />
               </div>
-
-
-
-              <div className="episode-actions">
-
-
-
-                <button type="button" className="ghost" onClick={() => onNavigate(`#episode=${episode.id}`)}>
-
-
-
-                  Open
-
-
-
-                </button>
-
-
-
-                <button type="button" className="ghost" onClick={() => handleEpisodeDelete(episode.id)}>
-
-
-
-                  Delete
-
-
-
-                </button>
-
-
-
-              </div>
-
-
-
             </div>
+          )}
 
+          {section === 'temperature' && (
+            <div className="log-columns single-column">
+              <div className="log-block">
+                <div className="section-header">
+                  <h3>Temperatures</h3>
+                  <p>Fever threshold: {FEVER_THRESHOLD.toFixed(1)} C</p>
+                </div>
+                <TemperatureChart entries={memberTemps} />
+                {memberTemps.length === 0 && (
+                  <div className="empty-state">
+                    <p className="empty">No temperature entries yet.</p>
+                    <button type="button" className="ghost" onClick={() => openComposer('temperature')}>
+                      Add first temperature
+                    </button>
+                  </div>
+                )}
+                <TempLogList
+                  entries={memberTemps}
+                  episodes={memberEpisodes}
+                  onUpdate={onUpdateTemp}
+                  onDelete={onDeleteTemp}
+                />
+              </div>
+            </div>
+          )}
 
+          {section === 'symptoms' && (
+            <div className="log-columns single-column">
+              <div className="log-block">
+                <div className="section-header">
+                  <h3>Symptoms</h3>
+                  <p>Logged separately from illnesses.</p>
+                </div>
+                {memberSymptoms.length === 0 && (
+                  <div className="empty-state">
+                    <p className="empty">No symptom entries yet.</p>
+                    <button type="button" className="ghost" onClick={() => openComposer('symptoms')}>
+                      Add first symptoms
+                    </button>
+                  </div>
+                )}
+                <SymptomLogList
+                  entries={memberSymptoms}
+                  episodes={memberEpisodes}
+                  onUpdate={onUpdateSymptom}
+                  onDelete={onDeleteSymptom}
+                />
+              </div>
+            </div>
+          )}
 
-          ))}
+          {section === 'calendar' && (
+            <CalendarView member={member} temps={memberTemps} meds={memberMeds} onQuickAdd={handleQuickAdd} />
+          )}
 
+          {section === 'more' && (
+            <div className="insights">
+              <div className="insight-summary">
+                <div className="insight-card">
+                  <div className="insight-label">Average temp</div>
+                  <div className="insight-value">
+                    {avgTempOverall !== null ? `${avgTempOverall.toFixed(1)} C` : '-'}
+                  </div>
+                  <div className="insight-sub">{memberTemps.length} readings</div>
+                </div>
+                <div className="insight-card">
+                  <div className="insight-label">Fever days</div>
+                  <div className="insight-value">{feverDaysOverall}</div>
+                  <div className="insight-sub">Temp {'>='} {FEVER_THRESHOLD.toFixed(1)} C</div>
+                </div>
+                <div className="insight-card">
+                  <div className="insight-label">Meds (30 days)</div>
+                  <div className="insight-value">{medCountLast30}</div>
+                  <div className="insight-sub">Last 30 days</div>
+                </div>
+              </div>
 
+              <div className="insight-actions">
+                <button type="button" className="ghost" onClick={handleDownloadInsights}>
+                  Download charts (SVG)
+                </button>
+                <span className="insight-note">Charts export as SVG for Excel or Keynote.</span>
+              </div>
 
-        </div>
+              <div className="insight-grid">
+                <div className="insight-card">
+                  <MiniBarChart
+                    id="insight-avg-temp"
+                    title="Avg temp by illness"
+                    data={avgTempByEpisode}
+                    valueSuffix=" C"
+                    emptyLabel="No linked temperatures yet."
+                  />
+                </div>
+                <div className="insight-card">
+                  <MiniBarChart
+                    id="insight-fever-days"
+                    title="Fever days by illness"
+                    data={feverDaysByEpisode}
+                    emptyLabel="No fever days yet."
+                  />
+                </div>
+                <div className="insight-card">
+                  <MiniBarChart
+                    id="insight-med-frequency"
+                    title="Meds in last 30 days"
+                    data={medFrequency}
+                    emptyLabel="No meds in last 30 days."
+                  />
+                </div>
+              </div>
+            </div>
+          )}
 
+          {section === 'illness' && (
+            <div className="episode-list">
+              <div className="section-header">
+                <h3>Illness episodes</h3>
+                <button type="button" className="primary" onClick={() => onCreateEpisode(member)}>
+                  Add illness
+                </button>
+              </div>
 
+              {memberEpisodes.length === 0 && <p className="empty">No illness episodes yet.</p>}
 
-      )}
+              {memberEpisodes.map((episode) => (
+                <div key={episode.id} className="episode-card">
+                  <div>
+                    <div className="episode-title">{episode.category}</div>
+                    <div className="episode-sub">
+                      <span className="episode-meta">Severity {episode.severity}</span>
+                      <span className="episode-meta episode-status">
+                        {episode.endedAtISO ? `Closed ${formatDate(episode.endedAtISO)}` : 'Ongoing'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="episode-actions">
+                    <button type="button" className="ghost" onClick={() => onNavigate(`#episode=${episode.id}`)}>
+                      Open
+                    </button>
+                    <button type="button" className="ghost" onClick={() => handleEpisodeDelete(episode.id)}>
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </motion.div>
+      </AnimatePresence>
 
 
 
@@ -4940,6 +4896,8 @@ const PersonView = ({
 
 
 };
+
+const MemberWorkspace = PersonView;
 
 
 
@@ -7806,8 +7764,8 @@ export default function App() {
 
   const navMemberIdFixed = navMemberId ?? primaryMemberId;
 
-  const activeMemberTab: MemberTab | null =
-    route.page === 'person' ? route.tab ?? 'logs' : null;
+  const activeMemberSection: MemberSection | null =
+    route.page === 'person' ? route.section ?? 'medication' : null;
 
 
 
@@ -8832,7 +8790,7 @@ export default function App() {
 
 
 
-          <p>Pick a person to view illness episodes.</p>
+          <p>Select a member to open their workspace.</p>
 
 
 
@@ -8930,45 +8888,29 @@ export default function App() {
 
 
 
-              <div className="person-sub">
-                Episodes: {episodes.filter((ep) => ep.memberId === member.id && !ep.deletedAtISO).length}
+              <div className="person-chip-row">
+                <span className="person-chip">
+                  {episodes.filter((ep) => ep.memberId === member.id && !ep.deletedAtISO).length} illness
+                </span>
+                <span className="person-chip">
+                  {recentMeds.length} meds (24h)
+                </span>
+                <span className="person-chip">
+                  {recentTemps.length} temps (24h)
+                </span>
               </div>
-              <div className="person-sub">
-                {lastISO ? `Last log: ${formatDateTime(lastISO)}` : 'No logs yet'}
-              </div>
-              {(recentTemps.length > 0 || recentMeds.length > 0) ? (
-                <div className="person-recent">
-                  <div className="person-recent-title">Last 24h</div>
-                  {recentTemps.length > 0 && (
-                    <div className="person-recent-list">
-                      {recentTemps.map((entry) => (
-                        <div key={entry.id} className="person-recent-item">
-                          <span className="person-recent-label">Temp</span>
-                          <span>{entry.tempC.toFixed(1)} C</span>
-                          <span className="person-recent-time">{formatTime(entry.atISO)}</span>
-                        </div>
-                      ))}
+              <div className="person-sub">{lastISO ? `Last log ${formatDateTime(lastISO)}` : 'No logs yet'}</div>
+              {recentMeds.length > 0 && (
+                <div className="person-recent compact">
+                  {recentMeds.slice(0, 2).map((entry) => (
+                    <div key={entry.id} className="person-recent-item">
+                      <span className="person-recent-label">{entry.medName}</span>
+                      <span className="person-recent-time">
+                        {formatRelativeTime(entry.atISO, new Date(nowTs))} ({formatTime(entry.atISO)})
+                      </span>
                     </div>
-                  )}
-                  {recentMeds.length > 0 && (
-                    <div className="person-recent-list">
-                      {recentMeds.map((entry) => (
-                        <div key={entry.id} className="person-recent-item">
-                          <span className="person-recent-label">Med</span>
-                          <span>
-                            {entry.medName}
-                            {entry.doseText ? ` ${entry.doseText}` : ''}
-                          </span>
-                          <span className="person-recent-time">
-                            {formatRelativeTime(entry.atISO, new Date(nowTs))} ({formatTime(entry.atISO)})
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  ))}
                 </div>
-              ) : (
-                <div className="person-sub">No temp or meds in the last 24h.</div>
               )}
 
 
@@ -9010,11 +8952,11 @@ export default function App() {
 
       return (
 
-      <PersonView
+      <MemberWorkspace
 
         member={member}
 
-        initialTab={route.tab}
+        initialSection={route.section}
 
         episodes={episodes}
 
@@ -9057,8 +8999,6 @@ export default function App() {
         onDeleteSymptom={deleteSymptomEntry}
 
         onUpsertCatalog={upsertCatalogItem}
-
-        onToggleFavorite={toggleFavorite}
 
         onExport={exportMemberToExcel}
 
@@ -9452,19 +9392,11 @@ export default function App() {
         </button>
         <button
           type="button"
-          className={activeMemberTab === 'logs' ? 'active' : ''}
-          onClick={() => navMemberIdFixed && navigate(`#person=${navMemberIdFixed}&tab=logs`)}
+          className={route.page === 'person' ? 'active' : ''}
+          onClick={() => navMemberIdFixed && navigate(`#person=${navMemberIdFixed}&section=${activeMemberSection ?? 'medication'}`)}
           disabled={!navMemberIdFixed}
         >
-          Logs
-        </button>
-        <button
-          type="button"
-          className={activeMemberTab === 'calendar' ? 'active' : ''}
-          onClick={() => navMemberIdFixed && navigate(`#person=${navMemberIdFixed}&tab=calendar`)}
-          disabled={!navMemberIdFixed}
-        >
-          Calendar
+          Current Member
         </button>
         <button
           type="button"
