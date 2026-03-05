@@ -370,6 +370,49 @@ export const mergeById = <T extends { id: string; updatedAtISO?: string | null; 
   return Array.from(map.values());
 };
 
+const normalizedForConflict = (item: Record<string, unknown>) => {
+  const clone = { ...item };
+  delete clone.updatedAtISO;
+  return clone;
+};
+
+const hasConflict = <T extends { id: string; updatedAtISO?: string | null; deletedAtISO?: string | null }>(
+  left: T,
+  right: T
+) => {
+  if (left.deletedAtISO || right.deletedAtISO) return false;
+  const leftComparable = normalizedForConflict(left as unknown as Record<string, unknown>);
+  const rightComparable = normalizedForConflict(right as unknown as Record<string, unknown>);
+  return JSON.stringify(leftComparable) !== JSON.stringify(rightComparable);
+};
+
+const mergeByIdAppendOnly = <T extends { id: string; updatedAtISO?: string | null; deletedAtISO?: string | null }>(
+  local: T[],
+  remote: T[]
+): T[] => {
+  const map = new Map<string, T>();
+  remote.forEach((item) => map.set(item.id, item));
+  const appendOnly: T[] = [];
+
+  local.forEach((item) => {
+    const existing = map.get(item.id);
+    if (!existing) {
+      map.set(item.id, item);
+      return;
+    }
+
+    const winner = mergeById([item], [existing])[0] ?? existing;
+    map.set(item.id, winner);
+
+    if (hasConflict(item, existing)) {
+      const alternate = winner === item ? existing : item;
+      appendOnly.push({ ...alternate, id: createId() } as T);
+    }
+  });
+
+  return [...map.values(), ...appendOnly];
+};
+
 export const mergeHousehold = (local: Household, remote: Household): Household => {
   const mergedMembers = mergeById(local.members, remote.members);
   const mergedUpdatedAtISO = nowISO();
@@ -387,9 +430,9 @@ export const mergeLogData = (local: LogData, remote: LogData): LogData => ({
   schemaVersion: SCHEMA_VERSION,
   lastUpdatedAtISO: nowISO(),
   episodes: mergeById(local.episodes, remote.episodes),
-  temps: mergeById(local.temps, remote.temps),
-  meds: mergeById(local.meds, remote.meds),
-  medCourses: mergeById(local.medCourses, remote.medCourses),
-  symptoms: mergeById(local.symptoms, remote.symptoms),
+  temps: mergeByIdAppendOnly(local.temps, remote.temps),
+  meds: mergeByIdAppendOnly(local.meds, remote.meds),
+  medCourses: mergeByIdAppendOnly(local.medCourses, remote.medCourses),
+  symptoms: mergeByIdAppendOnly(local.symptoms, remote.symptoms),
   medCatalog: mergeById(local.medCatalog, remote.medCatalog)
 });

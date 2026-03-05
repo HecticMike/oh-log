@@ -336,166 +336,94 @@ type DriveState = {
 
 const FEVER_THRESHOLD = 37.8;
 
+type CreateEpisodeInput = {
+  category: string;
+  severity: number;
+  notes: string;
+  startedAtISO: string;
+};
 
+type CreateEpisodeOptions = {
+  navigate?: boolean;
+  input?: Partial<CreateEpisodeInput>;
+};
 
-
-
-
+const formatChartDate = (iso: string) =>
+  new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
 
 const TemperatureChart = ({ entries }: { entries: TempEntry[] }) => {
-
-
-
   if (entries.length === 0) {
-
-
-
     return <div className="chart-empty">No temperature entries yet.</div>;
-
-
-
   }
 
-
-
-  const width = 520;
-
-
-
-  const height = 180;
-
-
-
-  const padding = 28;
-
-
-
-  const values = entries.map((entry) => entry.tempC);
-
-
-
-  const min = Math.min(...values);
-
-
-
-  const max = Math.max(...values);
-
-
-
- const span = min === max ? 1 : max - min;
-
-
-
- const xStep = entries.length > 1 ? (width - padding * 2) / (entries.length - 1) : 0;
-
-
-
-  const points = entries.map((entry, index) => {
-
-
-
-    const x = padding + index * xStep;
-
-
-
-    const y = padding + ((max - entry.tempC) / span) * (height - padding * 2);
-
-
-
-    return { x, y, entry };
-
-
-
+  const sorted = entries
+    .slice()
+    .sort((a, b) => new Date(a.atISO).getTime() - new Date(b.atISO).getTime());
+  const latestByDay = new Map<string, TempEntry>();
+  sorted.forEach((entry) => {
+    const key = toLocalDateKey(entry.atISO);
+    if (!key) return;
+    latestByDay.set(key, entry);
   });
-
-
-
-  const linePath = points
-    .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`)
-    .join(' ');
-
-
-
-
-
-
+  const dailyEntries = Array.from(latestByDay.values()).slice(-10);
+  const width = 520;
+  const height = 220;
+  const padding = { top: 34, right: 20, bottom: 54, left: 20 };
+  const chartWidth = width - padding.left - padding.right;
+  const chartHeight = height - padding.top - padding.bottom;
+  const values = dailyEntries.map((entry) => entry.tempC);
+  const min = Math.min(...values, FEVER_THRESHOLD) - 0.4;
+  const max = Math.max(...values, FEVER_THRESHOLD) + 0.4;
+  const span = Math.max(max - min, 0.8);
+  const yFor = (value: number) => padding.top + ((max - value) / span) * chartHeight;
+  const axisY = padding.top + chartHeight;
+  const feverY = yFor(FEVER_THRESHOLD);
+  const gap = 10;
+  const baseBar = (chartWidth - gap * Math.max(0, dailyEntries.length - 1)) / Math.max(dailyEntries.length, 1);
+  const barWidth = Math.max(24, Math.min(46, baseBar));
+  const totalBars = barWidth * dailyEntries.length + gap * Math.max(0, dailyEntries.length - 1);
+  const startX = padding.left + Math.max(0, (chartWidth - totalBars) / 2);
+  const baseY = yFor(min);
 
   return (
-
-
-
-    <svg className="temp-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Temperature chart">
-
-
-
-      <defs>
-
-        <linearGradient id="tempLine" x1="0" y1="0" x2="1" y2="0">
-
-          <stop offset="0%" stopColor="#1C8C8C" />
-
-          <stop offset="100%" stopColor="#F05A4F" />
-
-        </linearGradient>
-
-      </defs>
-
+    <svg className="temp-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Daily temperature chart">
       <rect x="0" y="0" width={width} height={height} className="chart-bg" />
-
-      <path d={linePath} fill="none" stroke="url(#tempLine)" strokeWidth="3" />
-
-      {points.map((point) => (
-
-        <rect
-
-          key={point.entry.id}
-
-          x={point.x - 3}
-
-          y={point.y - 3}
-
-          width={6}
-
-          height={6}
-
-          className="chart-point"
-
-        />
-
-      ))}
-
-      <text x={padding} y={padding - 8} className="chart-label">
-
-
-
-        {min.toFixed(1)} C
-
-
-
+      <line x1={padding.left} y1={feverY} x2={width - padding.right} y2={feverY} className="chart-fever-line" />
+      <text x={width - padding.right} y={feverY - 6} textAnchor="end" className="chart-meta">
+        Fever {FEVER_THRESHOLD.toFixed(1)} C
       </text>
-
-
-
-      <text x={padding} y={height - 6} className="chart-label">
-
-
-
-        {max.toFixed(1)} C
-
-
-
+      <line x1={padding.left} y1={axisY} x2={width - padding.right} y2={axisY} className="chart-axis-line" />
+      {dailyEntries.map((entry, index) => {
+        const x = startX + index * (barWidth + gap);
+        const y = yFor(entry.tempC);
+        const heightPx = Math.max(4, baseY - y);
+        return (
+          <g key={entry.id}>
+            <rect
+              x={x}
+              y={y}
+              width={barWidth}
+              height={heightPx}
+              rx={7}
+              className={`chart-bar ${entry.tempC >= FEVER_THRESHOLD ? 'fever' : ''}`}
+            />
+            <text x={x + barWidth / 2} y={Math.max(14, y - 6)} textAnchor="middle" className="chart-value">
+              {entry.tempC.toFixed(1)} C
+            </text>
+            <text x={x + barWidth / 2} y={axisY + 14} textAnchor="middle" className="chart-label">
+              {formatChartDate(entry.atISO)}
+            </text>
+            <text x={x + barWidth / 2} y={axisY + 27} textAnchor="middle" className="chart-meta">
+              {formatTime(entry.atISO)}
+            </text>
+          </g>
+        );
+      })}
+      <text x={padding.left} y={padding.top - 8} className="chart-label">
+        Daily temperature (latest per day)
       </text>
-
-
-
     </svg>
-
-
-
   );
-
-
-
 };
 
 type BarDatum = {
@@ -767,6 +695,7 @@ type LogEntryFormsProps = {
 
 
   onToggleFavorite: (itemId: string) => Promise<void>;
+  isSaving?: boolean;
 
 
 
@@ -829,6 +758,7 @@ const LogEntryForms = ({
 
 
   onToggleFavorite,
+  isSaving = false,
 
 
 
@@ -965,6 +895,8 @@ const LogEntryForms = ({
 
 
   const [selectedMedId, setSelectedMedId] = useState<string | null>(null);
+  const [submitAction, setSubmitAction] = useState<'temp' | 'symptom' | 'med' | null>(null);
+  const submitLockRef = useRef(false);
 
 
 
@@ -1117,6 +1049,22 @@ const LogEntryForms = ({
   const tempOutOfRange =
     tempValue.trim().length > 0 && (!Number.isFinite(tempParsed) || tempParsed < 35 || tempParsed > 42.5);
 
+  const runWithSubmitGuard = async (
+    action: 'temp' | 'symptom' | 'med',
+    work: () => Promise<void>
+  ): Promise<boolean> => {
+    if (isSaving || submitLockRef.current) return false;
+    submitLockRef.current = true;
+    setSubmitAction(action);
+    try {
+      await work();
+      return true;
+    } finally {
+      submitLockRef.current = false;
+      setSubmitAction(null);
+    }
+  };
+
 
 
 
@@ -1135,31 +1083,16 @@ const LogEntryForms = ({
 
 
 
-    await onAddTemp(
-
-
-
-      member.id,
-
-
-
-      parsed,
-
-
-
-      toISOFromTime(tempTime),
-
-
-
-      tempNote.trim(),
-
-
-
- locked ? lockEpisodeId : tempEpisodeId
-
-
-
-    );
+    const submitted = await runWithSubmitGuard('temp', async () => {
+      await onAddTemp(
+        member.id,
+        parsed,
+        toISOFromTime(tempTime),
+        tempNote.trim(),
+        locked ? lockEpisodeId : tempEpisodeId
+      );
+    });
+    if (!submitted) return;
 
 
 
@@ -1204,31 +1137,16 @@ const LogEntryForms = ({
 
 
 
-    await onAddSymptom(
-
-
-
-      member.id,
-
-
-
-      parsed,
-
-
-
-      toISOFromTime(symptomTime),
-
-
-
-      symptomNote.trim(),
-
-
-
- locked ? lockEpisodeId : symptomEpisodeId
-
-
-
-    );
+    const submitted = await runWithSubmitGuard('symptom', async () => {
+      await onAddSymptom(
+        member.id,
+        parsed,
+        toISOFromTime(symptomTime),
+        symptomNote.trim(),
+        locked ? lockEpisodeId : symptomEpisodeId
+      );
+    });
+    if (!submitted) return;
 
 
 
@@ -1289,39 +1207,18 @@ const LogEntryForms = ({
 
 
 
-    await onAddMed(
-
-
-
-      member.id,
-
-
-
-      catalogItem,
-
-
-
-      medDose.trim(),
-
-
-
-      iso,
-
-
-
-      medRoute.trim(),
-
-
-
-      medNote.trim(),
-
-
-
- locked ? lockEpisodeId : medEpisodeId
-
-
-
-    );
+    const submitted = await runWithSubmitGuard('med', async () => {
+      await onAddMed(
+        member.id,
+        catalogItem,
+        medDose.trim(),
+        iso,
+        medRoute.trim(),
+        medNote.trim(),
+        locked ? lockEpisodeId : medEpisodeId
+      );
+    });
+    if (!submitted) return;
 
 
 
@@ -1355,38 +1252,46 @@ const LogEntryForms = ({
       catalogItem = await onUpsertCatalog(lastMedEntry.medName);
     }
     if (!catalogItem) return;
-    await onAddMed(
-      member.id,
-      catalogItem,
-      lastMedEntry.doseText,
-      nowISO(),
-      lastMedEntry.route ?? '',
-      lastMedEntry.note ?? '',
-      locked ? lockEpisodeId : medEpisodeId
-    );
+    await runWithSubmitGuard('med', async () => {
+      await onAddMed(
+        member.id,
+        catalogItem,
+        lastMedEntry.doseText,
+        nowISO(),
+        lastMedEntry.route ?? '',
+        lastMedEntry.note ?? '',
+        locked ? lockEpisodeId : medEpisodeId
+      );
+    });
   };
 
   const handleRepeatSymptoms = async () => {
     if (!lastSymptomEntry) return;
-    await onAddSymptom(
-      member.id,
-      lastSymptomEntry.symptoms,
-      nowISO(),
-      lastSymptomEntry.note ?? '',
-      locked ? lockEpisodeId : symptomEpisodeId
-    );
+    await runWithSubmitGuard('symptom', async () => {
+      await onAddSymptom(
+        member.id,
+        lastSymptomEntry.symptoms,
+        nowISO(),
+        lastSymptomEntry.note ?? '',
+        locked ? lockEpisodeId : symptomEpisodeId
+      );
+    });
   };
 
   const handleRepeatTemp = async () => {
     if (!lastTempEntry) return;
-    await onAddTemp(
-      member.id,
-      lastTempEntry.tempC,
-      nowISO(),
-      lastTempEntry.note ?? '',
-      locked ? lockEpisodeId : tempEpisodeId
-    );
+    await runWithSubmitGuard('temp', async () => {
+      await onAddTemp(
+        member.id,
+        lastTempEntry.tempC,
+        nowISO(),
+        lastTempEntry.note ?? '',
+        locked ? lockEpisodeId : tempEpisodeId
+      );
+    });
   };
+
+  const submitDisabled = isSaving || submitAction !== null;
 
 
 
@@ -1410,7 +1315,7 @@ const LogEntryForms = ({
 
 
 
-        <p>Log symptoms, temperature, and medication without linking to an illness.</p>
+        <p>Log quickly and link each entry to an illness whenever needed.</p>
 
 
 
@@ -1548,11 +1453,11 @@ const LogEntryForms = ({
 
 
 
-            <button type="button" className="primary" onClick={handleTempSubmit}>
-              Add temperature
+            <button type="button" className="primary" onClick={handleTempSubmit} disabled={submitDisabled}>
+              {submitAction === 'temp' || isSaving ? 'Saving...' : 'Add temperature'}
             </button>
             {lastTempEntry && (
-              <button type="button" className="ghost" onClick={handleRepeatTemp}>
+              <button type="button" className="ghost" onClick={handleRepeatTemp} disabled={submitDisabled}>
                 Repeat last
               </button>
             )}
@@ -1689,11 +1594,11 @@ const LogEntryForms = ({
 
 
 
-            <button type="button" className="primary" onClick={handleSymptomSubmit}>
-              Add symptoms
+            <button type="button" className="primary" onClick={handleSymptomSubmit} disabled={submitDisabled}>
+              {submitAction === 'symptom' || isSaving ? 'Saving...' : 'Add symptoms'}
             </button>
             {lastSymptomEntry && (
-              <button type="button" className="ghost" onClick={handleRepeatSymptoms}>
+              <button type="button" className="ghost" onClick={handleRepeatSymptoms} disabled={submitDisabled}>
                 Repeat last
               </button>
             )}
@@ -1973,11 +1878,11 @@ const LogEntryForms = ({
 
 
 
-            <button type="button" className="primary" onClick={handleMedSubmit}>
-              Add medication
+            <button type="button" className="primary" onClick={handleMedSubmit} disabled={submitDisabled}>
+              {submitAction === 'med' || isSaving ? 'Saving...' : 'Add medication'}
             </button>
             {lastMedEntry && (
-              <button type="button" className="ghost" onClick={handleRepeatMed}>
+              <button type="button" className="ghost" onClick={handleRepeatMed} disabled={submitDisabled}>
                 Repeat last
               </button>
             )}
@@ -3021,7 +2926,7 @@ const WorkspaceSectionNav = ({ active, onChange }: WorkspaceSectionNavProps) => 
   );
 };
 
-type ComposerMode = 'medication' | 'temperature' | 'symptoms';
+type ComposerMode = 'medication' | 'temperature' | 'symptoms' | 'illness';
 
 type LogComposerSheetProps = {
   open: boolean;
@@ -3050,6 +2955,8 @@ type LogComposerSheetProps = {
     episodeId: string | null
   ) => Promise<void>;
   onUpsertCatalog: (name: string) => Promise<MedCatalogItem | null>;
+  onCreateEpisode: (member: Member, options?: CreateEpisodeOptions) => Promise<Episode | null>;
+  isSaving?: boolean;
 };
 
 const LogComposerSheet = ({
@@ -3064,7 +2971,9 @@ const LogComposerSheet = ({
   onAddTemp,
   onAddMed,
   onAddSymptom,
-  onUpsertCatalog
+  onUpsertCatalog,
+  onCreateEpisode,
+  isSaving = false
 }: LogComposerSheetProps) => {
   const reduceMotion = useReducedMotion();
   const [episodeId, setEpisodeId] = useState<string | null>(defaultEpisodeId);
@@ -3074,7 +2983,12 @@ const LogComposerSheet = ({
   const [medName, setMedName] = useState('');
   const [medDose, setMedDose] = useState('');
   const [route, setRoute] = useState('');
+  const [illnessCategory, setIllnessCategory] = useState('Illness');
+  const [illnessSeverity, setIllnessSeverity] = useState('3');
+  const [illnessDate, setIllnessDate] = useState(toLocalDateInput(nowISO()));
   const [note, setNote] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const submitLockRef = useRef(false);
 
   useEffect(() => {
     if (!open) return;
@@ -3085,34 +2999,76 @@ const LogComposerSheet = ({
     setMedName('');
     setMedDose('');
     setRoute('');
+    setIllnessCategory('Illness');
+    setIllnessSeverity('3');
+    setIllnessDate(toLocalDateInput(nowISO()));
     setNote('');
   }, [open, mode, member.id, defaultEpisodeId]);
 
   const handleSubmit = async () => {
-    if (mode === 'temperature') {
-      const parsed = Number(tempValue);
-      if (!Number.isFinite(parsed)) return;
-      await onAddTemp(member.id, parsed, toISOFromTime(timeValue), note.trim(), episodeId);
+    if (isSaving || submitting || submitLockRef.current) return;
+    submitLockRef.current = true;
+    setSubmitting(true);
+    try {
+      if (mode === 'illness') {
+        const severity = Math.min(5, Math.max(1, Number(illnessSeverity) || 3));
+        const created = await onCreateEpisode(member, {
+          navigate: false,
+          input: {
+            category: illnessCategory.trim() || 'Illness',
+            severity,
+            notes: note.trim(),
+            startedAtISO: toISOFromDate(illnessDate)
+          }
+        });
+        if (!created) return;
+        onOpenChange(false);
+        return;
+      }
+      if (mode === 'temperature') {
+        const parsed = Number(tempValue);
+        if (!Number.isFinite(parsed)) return;
+        await onAddTemp(member.id, parsed, toISOFromTime(timeValue), note.trim(), episodeId);
+        onOpenChange(false);
+        return;
+      }
+      if (mode === 'symptoms') {
+        const parsed = symptomText
+          .split(',')
+          .map((item) => item.trim())
+          .filter(Boolean);
+        if (parsed.length === 0) return;
+        await onAddSymptom(member.id, parsed, toISOFromTime(timeValue), note.trim(), episodeId);
+        onOpenChange(false);
+        return;
+      }
+      const catalogItem = await onUpsertCatalog(medName);
+      if (!catalogItem) return;
+      await onAddMed(
+        member.id,
+        catalogItem,
+        medDose.trim(),
+        toISOFromTime(timeValue),
+        route.trim(),
+        note.trim(),
+        episodeId
+      );
       onOpenChange(false);
-      return;
+    } finally {
+      submitLockRef.current = false;
+      setSubmitting(false);
     }
-    if (mode === 'symptoms') {
-      const parsed = symptomText
-        .split(',')
-        .map((item) => item.trim())
-        .filter(Boolean);
-      if (parsed.length === 0) return;
-      await onAddSymptom(member.id, parsed, toISOFromTime(timeValue), note.trim(), episodeId);
-      onOpenChange(false);
-      return;
-    }
-    const catalogItem = await onUpsertCatalog(medName);
-    if (!catalogItem) return;
-    await onAddMed(member.id, catalogItem, medDose.trim(), toISOFromTime(timeValue), route.trim(), note.trim(), episodeId);
-    onOpenChange(false);
   };
 
-  const title = mode === 'medication' ? 'Add medication' : mode === 'temperature' ? 'Add temperature' : 'Add symptoms';
+  const title =
+    mode === 'medication'
+      ? 'Add medication'
+      : mode === 'temperature'
+      ? 'Add temperature'
+      : mode === 'symptoms'
+      ? 'Add symptoms'
+      : 'Add illness';
+  const submitDisabled = isSaving || submitting;
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -3139,13 +3095,19 @@ const LogComposerSheet = ({
                 <div className="composer-sheet-header">
                   <Dialog.Title>{title}</Dialog.Title>
                   <Dialog.Close asChild>
-                    <button type="button" className="ghost">Close</button>
+                    <button type="button" className="ghost" disabled={submitDisabled}>Close</button>
                   </Dialog.Close>
                 </div>
                 {mode === 'medication' && recentMedicationChoices.length > 0 && (
                   <div className="composer-quick-picks" aria-label="Recent medication quick picks">
                     {recentMedicationChoices.map((name) => (
-                      <button key={name} type="button" className="chip" onClick={() => setMedName(name)}>
+                      <button
+                        key={name}
+                        type="button"
+                        className="chip"
+                        onClick={() => setMedName(name)}
+                        disabled={submitDisabled}
+                      >
                         {name}
                       </button>
                     ))}
@@ -3201,35 +3163,69 @@ const LogComposerSheet = ({
                       />
                     </label>
                   )}
-                  <label>
-                    Time
-                    <input type="time" value={timeValue} onChange={(event) => setTimeValue(event.target.value)} />
-                  </label>
-                  <label>
-                    Link illness (optional)
-                    <select
-                      value={episodeId ?? ''}
-                      onChange={(event) => setEpisodeId(event.target.value ? event.target.value : null)}
-                    >
-                      <option value="">Unlinked</option>
-                      {episodes.filter((item) => !item.deletedAtISO).map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.category} - {formatDate(item.startedAtISO)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  {mode === 'illness' && (
+                    <>
+                      <label>
+                        Illness
+                        <input
+                          value={illnessCategory}
+                          onChange={(event) => setIllnessCategory(event.target.value)}
+                          placeholder="Flu"
+                        />
+                      </label>
+                      <label>
+                        Severity (1-5)
+                        <select value={illnessSeverity} onChange={(event) => setIllnessSeverity(event.target.value)}>
+                          {[1, 2, 3, 4, 5].map((value) => (
+                            <option key={value} value={value}>
+                              {value}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        Start date
+                        <input type="date" value={illnessDate} onChange={(event) => setIllnessDate(event.target.value)} />
+                      </label>
+                    </>
+                  )}
+                  {mode !== 'illness' && (
+                    <>
+                      <label>
+                        Time
+                        <input type="time" value={timeValue} onChange={(event) => setTimeValue(event.target.value)} />
+                      </label>
+                      <label>
+                        Link illness (optional)
+                        <select
+                          value={episodeId ?? ''}
+                          onChange={(event) => setEpisodeId(event.target.value ? event.target.value : null)}
+                        >
+                          <option value="">Unlinked</option>
+                          {episodes.filter((item) => !item.deletedAtISO).map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.category} - {formatDate(item.startedAtISO)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </>
+                  )}
                   <label className="full">
                     Note
-                    <input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Optional" />
+                    <input
+                      value={note}
+                      onChange={(event) => setNote(event.target.value)}
+                      placeholder={mode === 'illness' ? 'Illness notes (optional)' : 'Optional'}
+                    />
                   </label>
                 </div>
                 <div className="composer-sheet-actions">
-                  <button type="button" className="primary" onClick={handleSubmit}>
-                    Save
+                  <button type="button" className="primary" onClick={handleSubmit} disabled={submitDisabled}>
+                    {submitDisabled ? 'Saving...' : mode === 'illness' ? 'Save illness' : 'Save'}
                   </button>
                   <Dialog.Close asChild>
-                    <button type="button" className="ghost">Cancel</button>
+                    <button type="button" className="ghost" disabled={submitDisabled}>Cancel</button>
                   </Dialog.Close>
                 </div>
               </motion.div>
@@ -4107,7 +4103,7 @@ type PersonViewProps = {
 
   initialSection?: MemberSection;
 
-  onCreateEpisode: (member: Member) => Promise<void>;
+  onCreateEpisode: (member: Member, options?: CreateEpisodeOptions) => Promise<Episode | null>;
 
 
 
@@ -4222,6 +4218,7 @@ type PersonViewProps = {
 
 
   onUpsertCatalog: (name: string) => Promise<MedCatalogItem | null>;
+  isSaving?: boolean;
 
 
 
@@ -4325,6 +4322,7 @@ const PersonView = ({
 
 
   onUpsertCatalog,
+  isSaving = false,
 
 
 
@@ -4398,14 +4396,22 @@ const PersonView = ({
   };
 
   const openComposer = (mode: ComposerMode) => {
+    if (isSaving) return;
     setComposerMode(mode);
     const nextSection: MemberSection =
-      mode === 'medication' ? 'medication' : mode === 'temperature' ? 'temperature' : 'symptoms';
+      mode === 'medication'
+        ? 'medication'
+        : mode === 'temperature'
+        ? 'temperature'
+        : mode === 'symptoms'
+        ? 'symptoms'
+        : 'illness';
     setSectionAndRoute(nextSection);
     setComposerOpen(true);
   };
 
   const handleQuickAdd = (type: 'temp' | 'symptom' | 'med') => {
+    if (isSaving) return;
     if (type === 'temp') {
       openComposer('temperature');
       return;
@@ -4664,6 +4670,7 @@ const PersonView = ({
           type="button"
           className="primary"
           onClick={() => openComposer('medication')}
+          disabled={isSaving}
         >
           + Medication
         </button>
@@ -4671,6 +4678,7 @@ const PersonView = ({
           type="button"
           className="ghost"
           onClick={() => openComposer('temperature')}
+          disabled={isSaving}
         >
           + Temperature
         </button>
@@ -4678,8 +4686,17 @@ const PersonView = ({
           type="button"
           className="ghost"
           onClick={() => openComposer('symptoms')}
+          disabled={isSaving}
         >
           + Symptoms
+        </button>
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => openComposer('illness')}
+          disabled={isSaving}
+        >
+          + Illness
         </button>
         <span className="quick-add-hint">Fast logging opens in a compact bottom sheet.</span>
       </div>
@@ -4699,6 +4716,8 @@ const PersonView = ({
         onAddMed={onAddMed}
         onAddSymptom={onAddSymptom}
         onUpsertCatalog={onUpsertCatalog}
+        onCreateEpisode={onCreateEpisode}
+        isSaving={isSaving}
       />
 
 
@@ -4869,8 +4888,8 @@ const PersonView = ({
             <div className="episode-list">
               <div className="section-header">
                 <h3>Illness episodes</h3>
-                <button type="button" className="primary" onClick={() => onCreateEpisode(member)}>
-                  Add illness
+                <button type="button" className="primary" onClick={() => onCreateEpisode(member)} disabled={isSaving}>
+                  {isSaving ? 'Saving...' : 'Add illness'}
                 </button>
               </div>
 
@@ -5060,6 +5079,8 @@ type EpisodeViewProps = {
 
   onToggleFavorite: (itemId: string) => Promise<void>;
 
+  isSaving: boolean;
+
 
 
   onNavigate: (hash: string) => void;
@@ -5151,6 +5172,8 @@ const EpisodeView = ({
 
 
   onToggleFavorite,
+
+  isSaving,
 
 
 
@@ -5353,7 +5376,11 @@ const EpisodeView = ({
 
 
 
-          <button type="button" className="ghost" onClick={() => onNavigate(`#person=${episode.memberId}`)}>
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => onNavigate(`#person=${episode.memberId}`)}
+          >
 
 
 
@@ -5366,50 +5393,21 @@ const EpisodeView = ({
 
 
           <button
-
-
-
             type="button"
-
-
-
             className="ghost"
-
-
-
             onClick={() =>
-
-
-
               onUpdateEpisode(episode.id, {
-
-
-
                 endedAtISO: episode.endedAtISO ? null : nowISO()
-
-
-
               })
-
-
-
             }
-
-
-
+            disabled={isSaving}
           >
-
-
-
- {episode.endedAtISO ? 'Reopen' : 'Close'}
-
-
-
+            {episode.endedAtISO ? 'Reopen' : 'Close'}
           </button>
 
 
 
-          <button type="button" className="ghost" onClick={handleDelete}>
+          <button type="button" className="ghost" onClick={handleDelete} disabled={isSaving}>
 
 
 
@@ -5537,11 +5535,11 @@ const EpisodeView = ({
 
 
 
-        <button type="button" className="primary" onClick={handleEpisodeSave}>
+        <button type="button" className="primary" onClick={handleEpisodeSave} disabled={isSaving}>
 
 
 
-          Save illness
+          {isSaving ? 'Saving...' : 'Save illness'}
 
 
 
@@ -5563,13 +5561,13 @@ const EpisodeView = ({
 
         <div className="section">
           <div className="quick-add episode-quick-add">
-            <button type="button" className="primary" onClick={() => focusEpisodeField('temp')}>
+            <button type="button" className="primary" onClick={() => focusEpisodeField('temp')} disabled={isSaving}>
               + Temp
             </button>
-            <button type="button" className="ghost" onClick={() => focusEpisodeField('symptom')}>
+            <button type="button" className="ghost" onClick={() => focusEpisodeField('symptom')} disabled={isSaving}>
               + Symptoms
             </button>
-            <button type="button" className="ghost" onClick={() => focusEpisodeField('med')}>
+            <button type="button" className="ghost" onClick={() => focusEpisodeField('med')} disabled={isSaving}>
               + Medication
             </button>
             <span className="quick-add-hint">Quick add to this illness.</span>
@@ -5618,6 +5616,7 @@ const EpisodeView = ({
 
 
             onToggleFavorite={onToggleFavorite}
+            isSaving={isSaving}
 
 
 
@@ -6686,6 +6685,10 @@ export default function App() {
 
   const [saveToast, setSaveToast] = useState<string | null>(null);
   const saveToastTimer = useRef<number | null>(null);
+  const [isLogSaving, setIsLogSaving] = useState(false);
+  const logStateRef = useRef<DriveFileState<LogData> | null>(null);
+  const logSaveLockRef = useRef(false);
+  const logUpdateQueueRef = useRef<Promise<void>>(Promise.resolve());
 
 
 
@@ -6861,6 +6864,18 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    logStateRef.current = logState;
+  }, [logState]);
+
+  useEffect(() => {
+    return () => {
+      if (saveToastTimer.current) {
+        window.clearTimeout(saveToastTimer.current);
+      }
+    };
+  }, []);
+
 
 
 
@@ -6872,6 +6887,17 @@ export default function App() {
 
 
   const setDriveMessage = (message: string | null) => setDrive((prev) => ({ ...prev, message }));
+
+  const showSaveToast = (message: string, durationMs = 1500) => {
+    if (saveToastTimer.current) {
+      window.clearTimeout(saveToastTimer.current);
+      saveToastTimer.current = null;
+    }
+    setSaveToast(message);
+    if (durationMs > 0) {
+      saveToastTimer.current = window.setTimeout(() => setSaveToast(null), durationMs);
+    }
+  };
 
 
 
@@ -7644,93 +7670,45 @@ export default function App() {
 
 
   const updateLog = async (updater: (current: LogData) => LogData) => {
+    const run = async () => {
+      const state = logStateRef.current;
+      if (!state) return;
 
+      logSaveLockRef.current = true;
+      setBusy(true);
+      setIsLogSaving(true);
+      setLocalMessage(null);
+      showSaveToast('Saving...', 0);
 
+      try {
+        const currentData = ensureLogData(state.data);
+        const next = ensureLogData(updater({ ...currentData, lastUpdatedAtISO: nowISO() }));
+        const optimisticState = { ...state, data: next };
+        logStateRef.current = optimisticState;
+        setLogState(optimisticState);
 
-    if (!logState) return;
+        const result = await saveLogToDrive(state, next);
+        logStateRef.current = result.state;
+        setLogState(result.state);
+        setLastSyncISO(nowISO());
+        showSaveToast('Saved', 1500);
 
-
-
-    setBusy(true);
-
-
-
-    setLocalMessage(null);
-
-
-
-    try {
-
-
-
-      const currentData = ensureLogData(logState.data);
-
-
-
-      const next = ensureLogData(updater({ ...currentData, lastUpdatedAtISO: nowISO() }));
-
-
-
-      setLogState((prev) => (prev ? { ...prev, data: next } : prev));
-
-
-
-      const result = await saveLogToDrive(logState, next);
-
-
-
-      setLogState(result.state);
-
-
-
-      setLastSyncISO(nowISO());
-
-      if (saveToastTimer.current) {
-        window.clearTimeout(saveToastTimer.current);
+        if (result.merged) {
+          setLocalMessage('Log updated with a Drive merge. Review any changes.');
+        }
+      } catch (err) {
+        setLocalMessage((err as Error).message);
+        showSaveToast('Save failed', 2000);
+      } finally {
+        logSaveLockRef.current = false;
+        setIsLogSaving(false);
+        setBusy(false);
       }
-      setSaveToast('Saved');
-      saveToastTimer.current = window.setTimeout(() => setSaveToast(null), 1500);
+    };
 
-      if (saveToastTimer.current) {
-        window.clearTimeout(saveToastTimer.current);
-      }
-      setSaveToast('Saved');
-      saveToastTimer.current = window.setTimeout(() => setSaveToast(null), 1500);
-
-
-
-      if (result.merged) {
-
-
-
-        setLocalMessage('Log updated with a Drive merge. Review any changes.');
-
-
-
-      }
-
-
-
-    } catch (err) {
-
-
-
-      setLocalMessage((err as Error).message);
-
-
-
-    } finally {
-
-
-
-      setBusy(false);
-
-
-
-    }
-
-
-
+    const queued = logUpdateQueueRef.current.then(run, run);
+    logUpdateQueueRef.current = queued.catch(() => undefined);
+    await queued;
   };
 
 
@@ -7807,15 +7785,16 @@ export default function App() {
 
 
 
-  const createEpisode = async (member: Member) => {
+  const createEpisode = async (member: Member, options?: CreateEpisodeOptions): Promise<Episode | null> => {
 
 
 
-    if (!logState) return;
+    if (!logState) return null;
 
 
 
     const now = nowISO();
+    const input = options?.input;
 
 
 
@@ -7831,7 +7810,7 @@ export default function App() {
 
 
 
-      category: 'Illness',
+      category: input?.category?.trim() || 'Illness',
 
 
 
@@ -7839,15 +7818,15 @@ export default function App() {
 
 
 
-      severity: 3,
+      severity: Math.min(5, Math.max(1, Math.round(input?.severity ?? 3))),
 
 
 
-      notes: '',
+      notes: input?.notes ?? '',
 
 
 
-      startedAtISO: now,
+      startedAtISO: input?.startedAtISO ?? now,
 
 
 
@@ -7875,7 +7854,7 @@ export default function App() {
 
 
 
-      episodes: mergeById([episode], current.episodes)
+      episodes: [episode, ...current.episodes]
 
 
 
@@ -7883,7 +7862,10 @@ export default function App() {
 
 
 
-    navigate(`#episode=${episode.id}`);
+    if (options?.navigate !== false) {
+      navigate(`#episode=${episode.id}`);
+    }
+    return episode;
 
 
 
@@ -7981,7 +7963,7 @@ export default function App() {
 
       ...current,
 
-      temps: mergeById([entry], current.temps)
+      temps: [entry, ...current.temps]
 
     }));
 
@@ -8045,7 +8027,7 @@ export default function App() {
 
       ...current,
 
-      meds: mergeById([entry], current.meds)
+      meds: [entry, ...current.meds]
 
     }));
 
@@ -8081,7 +8063,7 @@ export default function App() {
     };
     await updateLog((current) => ({
       ...current,
-      medCourses: mergeById([course], current.medCourses)
+      medCourses: [course, ...current.medCourses]
     }));
     return course;
   };
@@ -8157,7 +8139,7 @@ export default function App() {
 
       ...current,
 
-      symptoms: mergeById([entry], current.symptoms)
+      symptoms: [entry, ...current.symptoms]
 
     }));
 
@@ -9017,6 +8999,7 @@ export default function App() {
         onDeleteSymptom={deleteSymptomEntry}
 
         onUpsertCatalog={upsertCatalogItem}
+        isSaving={isLogSaving}
 
         onExport={exportMemberToExcel}
 
@@ -9086,6 +9069,7 @@ export default function App() {
         onUpsertCatalog={upsertCatalogItem}
 
         onToggleFavorite={toggleFavorite}
+        isSaving={isLogSaving}
 
         onNavigate={navigate}
 
@@ -9275,6 +9259,7 @@ export default function App() {
 
                 {driveAccountEmail && <span className="status-email">{driveAccountEmail}</span>}
                 <span className="status-message">Autosave writes every change to Drive when online.</span>
+                {isLogSaving && <span className="status-message">Saving latest log entry...</span>}
 
 
 

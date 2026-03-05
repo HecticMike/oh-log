@@ -244,7 +244,7 @@ textarea:focus-visible {
 
 .quick-add {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 0.6rem;
   align-items: center;
   padding: 0.9rem;
@@ -384,6 +384,18 @@ textarea:focus-visible {
 
 .person-panel .chart-point {
   fill: var(--member-accent-ink, var(--accent));
+}
+
+.person-panel .chart-bar {
+  fill: var(--member-accent-ink, var(--accent));
+}
+
+.person-panel .chart-bar.fever {
+  fill: #d45244;
+}
+
+.person-panel .chart-fever-line {
+  stroke: #d45244;
 }
 
 .person-panel .calendar-cell.today {
@@ -941,6 +953,25 @@ textarea:focus-visible {
 
 .chart-point {
   fill: var(--accent-4);
+}
+
+.chart-bar {
+  fill: #1c8c8c;
+}
+
+.chart-bar.fever {
+  fill: #f05a4f;
+}
+
+.chart-fever-line {
+  stroke: #f05a4f;
+  stroke-width: 1.5px;
+  stroke-dasharray: 4 3;
+}
+
+.chart-axis-line {
+  stroke: var(--border);
+  stroke-width: 1.5px;
 }
 
 .chart-label {
