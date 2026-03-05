@@ -3,6 +3,7 @@ import type { MedCourse } from './models';
 const MINUTE_MS = 60 * 1000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
+const COURSE_REMINDER_MINUTES = 5;
 
 const pad2 = (value: number) => String(value).padStart(2, '0');
 
@@ -54,6 +55,7 @@ export const buildCourseIcs = (course: MedCourse, memberName: string) => {
   const created = new Date();
   const nowStamp = toIcsUtc(created);
   const schedule = buildCourseSchedule(course);
+  const reminderTrigger = `-PT${COURSE_REMINDER_MINUTES}M`;
   const safeMember = memberName.trim() || 'Member';
   const summary = `${course.medName}${course.doseText ? ` ${course.doseText}` : ''}`.trim();
   const descriptionLines = [
@@ -87,14 +89,13 @@ export const buildCourseIcs = (course: MedCourse, memberName: string) => {
     lines.push(`SUMMARY:${sanitizeLine(summary)}`);
     lines.push(`DESCRIPTION:${description}`);
     lines.push('BEGIN:VALARM');
-    lines.push('ACTION:DISPLAY');
-    lines.push(`DESCRIPTION:${sanitizeLine(summary)}`);
-    lines.push('TRIGGER:-PT10M');
+    lines.push('ACTION:AUDIO');
+    lines.push(`TRIGGER:${reminderTrigger}`);
     lines.push('END:VALARM');
     lines.push('BEGIN:VALARM');
     lines.push('ACTION:DISPLAY');
     lines.push(`DESCRIPTION:${sanitizeLine(summary)}`);
-    lines.push('TRIGGER:PT0M');
+    lines.push(`TRIGGER:${reminderTrigger}`);
     lines.push('END:VALARM');
     lines.push('END:VEVENT');
   });
