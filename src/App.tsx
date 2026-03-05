@@ -340,6 +340,7 @@ type CreateEpisodeInput = {
   severity: number;
   notes: string;
   startedAtISO: string;
+  endedAtISO?: string | null;
 };
 
 type CreateEpisodeOptions = {
@@ -518,6 +519,8 @@ type EpisodeLinkSelectProps = {
 
 
   disabled?: boolean;
+  ongoingOnly?: boolean;
+  label?: string;
 
 
 
@@ -529,68 +532,37 @@ type EpisodeLinkSelectProps = {
 
 
 
-const EpisodeLinkSelect = ({ episodes, value, onChange, disabled = false }: EpisodeLinkSelectProps) => (
+const EpisodeLinkSelect = ({
+  episodes,
+  value,
+  onChange,
+  disabled = false,
+  ongoingOnly = false,
+  label = 'Link to illness (optional)'
+}: EpisodeLinkSelectProps) => {
+  const linkedEpisodes = episodes
+    .filter((episode) => !episode.deletedAtISO && (!ongoingOnly || !episode.endedAtISO))
+    .sort((a, b) => {
+      const aClosed = a.endedAtISO ? 1 : 0;
+      const bClosed = b.endedAtISO ? 1 : 0;
+      if (aClosed !== bClosed) return aClosed - bClosed;
+      return new Date(b.startedAtISO).getTime() - new Date(a.startedAtISO).getTime();
+    });
 
-
-
-  <label>
-
-
-
-    Link to illness (optional)
-
-
-
-    <select
-
-
-
-      value={value ?? ''}
-      onChange={(event) => onChange(event.target.value ? event.target.value : null)}
-
-
-
-      disabled={disabled}
-
-
-
-    >
-
-
-
-      <option value="">Unlinked</option>
-
-
-
-      {episodes.filter((episode) => !episode.deletedAtISO).map((episode) => (
-
-
-
-        <option key={episode.id} value={episode.id}>
-
-
-
-          {episode.category} - {formatDate(episode.startedAtISO)}
-
-
-
-        </option>
-
-
-
-      ))}
-
-
-
-    </select>
-
-
-
-  </label>
-
-
-
-);
+  return (
+    <label>
+      {label}
+      <select value={value ?? ''} onChange={(event) => onChange(event.target.value ? event.target.value : null)} disabled={disabled}>
+        <option value="">Unlinked</option>
+        {linkedEpisodes.map((episode) => (
+          <option key={episode.id} value={episode.id}>
+            {episode.endedAtISO ? 'Closed' : 'Ongoing'} - {episode.category} - {formatDate(episode.startedAtISO)}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+};
 
 
 
@@ -2718,12 +2690,14 @@ const MedLogList = ({ entries, episodes, onUpdate, onDelete, onUpsertCatalog }: 
 
 type MedicationCourseSectionProps = {
   member: Member;
+  episodes: Episode[];
   catalog: MedCatalogItem[];
   courses: MedCourse[];
   onUpsertCatalog: (name: string) => Promise<MedCatalogItem | null>;
   onCreateCourse: (input: {
     memberId: string;
     catalogItem: MedCatalogItem;
+    episodeId: string | null;
     doseText: string;
     startAtISO: string;
     intervalHours: number;
@@ -2737,6 +2711,7 @@ type MedicationCourseSectionProps = {
 
 const MedicationCourseSection = ({
   member,
+  episodes,
   catalog,
   courses,
   onUpsertCatalog,
@@ -2744,6 +2719,14 @@ const MedicationCourseSection = ({
   onDeleteCourse,
   onExportCourse
 }: MedicationCourseSectionProps) => {
+  const ongoingEpisodeId = useMemo(
+    () => episodes.find((episode) => !episode.deletedAtISO && !episode.endedAtISO)?.id ?? null,
+    [episodes]
+  );
+  const episodeById = useMemo(
+    () => new Map(episodes.filter((episode) => !episode.deletedAtISO).map((episode) => [episode.id, episode])),
+    [episodes]
+  );
   const [medName, setMedName] = useState('');
   const [doseText, setDoseText] = useState('');
   const [route, setRoute] = useState('');
@@ -2751,13 +2734,21 @@ const MedicationCourseSection = ({
   const [startTime, setStartTime] = useState(toLocalTimeInput(nowISO()));
   const [intervalHours, setIntervalHours] = useState('8');
   const [durationDays, setDurationDays] = useState('7');
+  const [courseEpisodeId, setCourseEpisodeId] = useState<string | null>(ongoingEpisodeId);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     setStartDate(toLocalDateInput(nowISO()));
     setStartTime(toLocalTimeInput(nowISO()));
-  }, [member.id]);
+    setCourseEpisodeId(ongoingEpisodeId);
+  }, [member.id, ongoingEpisodeId]);
+
+  useEffect(() => {
+    if (courseEpisodeId && !episodeById.has(courseEpisodeId)) {
+      setCourseEpisodeId(ongoingEpisodeId);
+    }
+  }, [courseEpisodeId, episodeById, ongoingEpisodeId]);
 
   const submitCourse = async () => {
     const interval = Math.max(1, Math.round(Number(intervalHours)));
@@ -2770,6 +2761,7 @@ const MedicationCourseSection = ({
       const created = await onCreateCourse({
         memberId: member.id,
         catalogItem,
+        episodeId: courseEpisodeId,
         doseText: doseText.trim(),
         startAtISO: toISOFromDateTime(startDate, startTime),
         intervalHours: interval,
@@ -2791,7 +2783,7 @@ const MedicationCourseSection = ({
     <div className="med-course">
       <div className="section-header">
         <h4>Antibiotic course reminders</h4>
-        <p>Every N hours for D days, exported as iPhone-ready calendar reminders.</p>
+        <p>Every N hours for D days, exported as iPhone-ready calendar reminders. You can link the course to an ongoing illness.</p>
       </div>
       <div className="form-grid">
         <label>
@@ -2844,6 +2836,14 @@ const MedicationCourseSection = ({
           Route
           <input value={route} onChange={(event) => setRoute(event.target.value)} placeholder="Oral (optional)" />
         </label>
+        <EpisodeLinkSelect
+          episodes={episodes}
+          value={courseEpisodeId}
+          onChange={setCourseEpisodeId}
+          disabled={busy}
+          ongoingOnly
+          label="Link ongoing illness (optional)"
+        />
         <label>
           Note
           <input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Optional" />
@@ -2857,6 +2857,7 @@ const MedicationCourseSection = ({
         {courses.length === 0 && <p className="empty">No medication courses yet.</p>}
         {courses.map((course) => {
           const count = buildCourseSchedule(course).length;
+          const linkedEpisode = course.episodeId ? episodeById.get(course.episodeId) : null;
           return (
             <div key={course.id} className="med-course-item">
               <div>
@@ -2868,6 +2869,11 @@ const MedicationCourseSection = ({
                 <span>
                   Starts {formatDate(course.startAtISO)} {formatTime(course.startAtISO)}
                 </span>
+                {linkedEpisode && (
+                  <span>
+                    Linked illness: {linkedEpisode.category} ({linkedEpisode.endedAtISO ? 'Closed' : 'Ongoing'})
+                  </span>
+                )}
               </div>
               <div className="log-actions">
                 <button type="button" className="ghost" onClick={() => onExportCourse(course, member)}>
@@ -2985,6 +2991,7 @@ const LogComposerSheet = ({
   const [illnessCategory, setIllnessCategory] = useState('Illness');
   const [illnessSeverity, setIllnessSeverity] = useState('3');
   const [illnessDate, setIllnessDate] = useState(toLocalDateInput(nowISO()));
+  const [illnessEndDate, setIllnessEndDate] = useState('');
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const submitLockRef = useRef(false);
@@ -3001,6 +3008,7 @@ const LogComposerSheet = ({
     setIllnessCategory('Illness');
     setIllnessSeverity('3');
     setIllnessDate(toLocalDateInput(nowISO()));
+    setIllnessEndDate('');
     setNote('');
   }, [open, mode, member.id, defaultEpisodeId]);
 
@@ -3011,13 +3019,16 @@ const LogComposerSheet = ({
     try {
       if (mode === 'illness') {
         const severity = Math.min(5, Math.max(1, Number(illnessSeverity) || 3));
+        const parsedEndDate =
+          illnessEndDate && illnessEndDate >= illnessDate ? toISOFromDate(illnessEndDate) : null;
         const created = await onCreateEpisode(member, {
           navigate: false,
           input: {
             category: illnessCategory.trim() || 'Illness',
             severity,
             notes: note.trim(),
-            startedAtISO: toISOFromDate(illnessDate)
+            startedAtISO: toISOFromDate(illnessDate),
+            endedAtISO: parsedEndDate
           }
         });
         if (!created) return;
@@ -3186,6 +3197,15 @@ const LogComposerSheet = ({
                         Start date
                         <input type="date" value={illnessDate} onChange={(event) => setIllnessDate(event.target.value)} />
                       </label>
+                      <label>
+                        End date (optional)
+                        <input
+                          type="date"
+                          min={illnessDate || undefined}
+                          value={illnessEndDate}
+                          onChange={(event) => setIllnessEndDate(event.target.value)}
+                        />
+                      </label>
                     </>
                   )}
                   {mode !== 'illness' && (
@@ -3194,20 +3214,7 @@ const LogComposerSheet = ({
                         Time
                         <input type="time" value={timeValue} onChange={(event) => setTimeValue(event.target.value)} />
                       </label>
-                      <label>
-                        Link illness (optional)
-                        <select
-                          value={episodeId ?? ''}
-                          onChange={(event) => setEpisodeId(event.target.value ? event.target.value : null)}
-                        >
-                          <option value="">Unlinked</option>
-                          {episodes.filter((item) => !item.deletedAtISO).map((item) => (
-                            <option key={item.id} value={item.id}>
-                              {item.category} - {formatDate(item.startedAtISO)}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                      <EpisodeLinkSelect episodes={episodes} value={episodeId} onChange={setEpisodeId} disabled={submitDisabled} />
                     </>
                   )}
                   <label className="full">
@@ -4152,6 +4159,7 @@ type PersonViewProps = {
   onCreateMedCourse: (input: {
     memberId: string;
     catalogItem: MedCatalogItem;
+    episodeId: string | null;
     doseText: string;
     startAtISO: string;
     intervalHours: number;
@@ -4346,7 +4354,7 @@ const PersonView = ({
   const handleEpisodeDelete = (episodeId: string) => {
     if (
       typeof window !== 'undefined' &&
-      !window.confirm('Delete this illness episode- Linked logs will remain but lose their association.')
+      !window.confirm('Delete this illness episode- Linked logs and courses will remain but lose their association.')
     )
       return;
     onDeleteEpisode(episodeId);
@@ -4743,6 +4751,7 @@ const PersonView = ({
                 </div>
                 <MedicationCourseSection
                   member={member}
+                  episodes={memberEpisodes}
                   catalog={catalog}
                   courses={memberCourses}
                   onUpsertCatalog={onUpsertCatalog}
@@ -5197,6 +5206,7 @@ const EpisodeView = ({
 
 
   const [startDate, setStartDate] = useState(toLocalDateInput(episode.startedAtISO));
+  const [endDate, setEndDate] = useState(toLocalDateInput(episode.endedAtISO));
 
 
 
@@ -5221,10 +5231,11 @@ const EpisodeView = ({
 
 
     setStartDate(toLocalDateInput(episode.startedAtISO));
+    setEndDate(toLocalDateInput(episode.endedAtISO));
 
 
 
-  }, [episode.category, episode.severity, episode.notes, episode.startedAtISO]);
+  }, [episode.category, episode.severity, episode.notes, episode.startedAtISO, episode.endedAtISO]);
 
 
 
@@ -5233,6 +5244,7 @@ const EpisodeView = ({
 
 
   const handleEpisodeSave = async () => {
+    const parsedEndDate = endDate && endDate >= startDate ? toISOFromDate(endDate) : null;
 
 
 
@@ -5252,7 +5264,8 @@ const EpisodeView = ({
 
 
 
-      startedAtISO: toISOFromDate(startDate)
+      startedAtISO: toISOFromDate(startDate),
+      endedAtISO: parsedEndDate
 
 
 
@@ -5272,7 +5285,7 @@ const EpisodeView = ({
 
 
 
-    if (!window.confirm('Delete this illness episode- Entries that link to it will stay in the log.')) return;
+    if (!window.confirm('Delete this illness episode- Entries and courses that link to it will stay saved but be unlinked.')) return;
 
     await onDeleteEpisode(episode.id);
 
@@ -5508,6 +5521,27 @@ const EpisodeView = ({
 
 
             <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+
+
+
+          </label>
+
+
+
+          <label>
+
+
+
+            End date (optional)
+
+
+
+            <input
+              type="date"
+              min={startDate || undefined}
+              value={endDate}
+              onChange={(event) => setEndDate(event.target.value)}
+            />
 
 
 
@@ -7835,7 +7869,7 @@ export default function App() {
 
 
 
-      endedAtISO: null,
+      endedAtISO: input?.endedAtISO ?? null,
 
 
 
@@ -8043,6 +8077,7 @@ export default function App() {
   const createMedCourse = async (input: {
     memberId: string;
     catalogItem: MedCatalogItem;
+    episodeId: string | null;
     doseText: string;
     startAtISO: string;
     intervalHours: number;
@@ -8055,6 +8090,7 @@ export default function App() {
     const course: MedCourse = {
       id: createId(),
       memberId: input.memberId,
+      episodeId: input.episodeId ?? null,
       medId: input.catalogItem.id,
       medName: input.catalogItem.name,
       doseText: input.doseText,
@@ -8292,6 +8328,10 @@ export default function App() {
 
       meds: current.meds.map((entry) =>
         entry.episodeId === episodeId ? { ...entry, episodeId: null, updatedAtISO: now } : entry
+      ),
+
+      medCourses: current.medCourses.map((course) =>
+        course.episodeId === episodeId ? { ...course, episodeId: null, updatedAtISO: now } : course
       ),
 
       symptoms: current.symptoms.map((entry) =>

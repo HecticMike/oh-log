@@ -54,6 +54,7 @@ export type MedCatalogItem = {
 export type MedCourse = {
   id: string;
   memberId: string;
+  episodeId?: string | null;
   medId: string;
   medName: string;
   doseText: string;
@@ -238,14 +239,17 @@ const normalizeMedEntry = (value: Partial<MedEntry>, episodeMap: Map<string, str
   };
 };
 
-const normalizeMedCourse = (value: Partial<MedCourse>, fallbackISO: string): MedCourse => {
+const normalizeMedCourse = (value: Partial<MedCourse>, episodeMap: Map<string, string>, fallbackISO: string): MedCourse => {
   const now = fallbackISO || nowISO();
+  const episodeId = typeof value.episodeId === 'string' ? value.episodeId : null;
+  const memberFallback = episodeId ? episodeMap.get(episodeId) : undefined;
   const createdAtISO = asString(value.createdAtISO, asString(value.updatedAtISO, now));
   const updatedAtISO = asString(value.updatedAtISO, createdAtISO);
   const deletedAtISO = typeof value.deletedAtISO === 'string' ? value.deletedAtISO : value.deletedAtISO === null ? null : null;
   return {
     id: asString(value.id, createId()),
-    memberId: asString(value.memberId, 'member-1'),
+    memberId: asString(value.memberId, memberFallback ?? 'member-1'),
+    episodeId,
     medId: asString(value.medId),
     medName: asString(value.medName, 'Medication'),
     doseText: asString(value.doseText),
@@ -319,7 +323,7 @@ export const ensureLogData = (value: unknown): LogData => {
       normalizeMedEntry(entry, episodeMap, logUpdatedAtISO)
     ),
     medCourses: asArray<Partial<MedCourse>>(data.medCourses).map((entry) =>
-      normalizeMedCourse(entry, logUpdatedAtISO)
+      normalizeMedCourse(entry, episodeMap, logUpdatedAtISO)
     ),
     symptoms: asArray<Partial<SymptomEntry>>(data.symptoms).map((entry) =>
       normalizeSymptomEntry(entry, episodeMap, logUpdatedAtISO)
