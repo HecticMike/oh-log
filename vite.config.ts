@@ -18,6 +18,18 @@ const pagesBase = normalizeBase(process.env.VITE_BASE);
 
 export default defineConfig({
   base: pagesBase,
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/xlsx')) return 'xlsx';
+          if (id.includes('node_modules/framer-motion')) return 'motion';
+          if (id.includes('node_modules/@radix-ui')) return 'radix';
+          if (id.includes('node_modules/react') || id.includes('node_modules/scheduler')) return 'react-vendor';
+        }
+      }
+    }
+  },
   plugins: [
     react(),
     VitePWA({

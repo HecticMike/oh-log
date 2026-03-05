@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type TouchEvent } from 'react';
 
-import * as XLSX from 'xlsx';
 import * as Dialog from '@radix-ui/react-dialog';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 
@@ -4672,7 +4671,7 @@ const PersonView = ({
           onClick={() => openComposer('medication')}
           disabled={isSaving}
         >
-          + Medication
+          + Log
         </button>
         <button
           type="button"
@@ -4698,7 +4697,7 @@ const PersonView = ({
         >
           + Illness
         </button>
-        <span className="quick-add-hint">Fast logging opens in a compact bottom sheet.</span>
+        <span className="quick-add-hint">Primary action opens a quick log sheet. Add illness first when needed.</span>
       </div>
 
       <WorkspaceSectionNav active={section} onChange={setSectionAndRoute} />
@@ -5380,6 +5379,7 @@ const EpisodeView = ({
             type="button"
             className="ghost"
             onClick={() => onNavigate(`#person=${episode.memberId}`)}
+            disabled={isSaving}
           >
 
 
@@ -5779,7 +5779,12 @@ const EpisodeView = ({
 
       </section>
       <div className="episode-sticky">
-        <button type="button" className="primary" onClick={() => onNavigate(`#person=${episode.memberId}`)}>
+        <button
+          type="button"
+          className="primary"
+          onClick={() => onNavigate(`#person=${episode.memberId}`)}
+          disabled={isSaving}
+        >
           Back to {member?.name ?? 'member'}
         </button>
       </div>
@@ -8427,7 +8432,9 @@ export default function App() {
 
 
 
-  const exportMemberToExcel = (member: Member) => {
+  const exportMemberToExcel = async (member: Member) => {
+    showSaveToast('Saving export...', 0);
+    try {
 
     const memberEpisodes = episodes.filter((episode) => episode.memberId === member.id && !episode.deletedAtISO);
 
@@ -8675,9 +8682,11 @@ export default function App() {
 
 
 
-    const workbook = XLSX.utils.book_new();
+    const { utils, writeFile } = await import('xlsx');
 
-    const combinedSheet = XLSX.utils.json_to_sheet(combinedRows, {
+    const workbook = utils.book_new();
+
+    const combinedSheet = utils.json_to_sheet(combinedRows, {
 
       header: [
 
@@ -8711,15 +8720,15 @@ export default function App() {
 
     });
 
-    XLSX.utils.book_append_sheet(workbook, combinedSheet, 'Combined');
+    utils.book_append_sheet(workbook, combinedSheet, 'Combined');
 
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(temperatureRows), 'Temperatures');
+    utils.book_append_sheet(workbook, utils.json_to_sheet(temperatureRows), 'Temperatures');
 
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(medicationRows), 'Medications');
+    utils.book_append_sheet(workbook, utils.json_to_sheet(medicationRows), 'Medications');
 
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(symptomRows), 'Symptoms');
+    utils.book_append_sheet(workbook, utils.json_to_sheet(symptomRows), 'Symptoms');
 
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(episodeRows), 'Illnesses');
+    utils.book_append_sheet(workbook, utils.json_to_sheet(episodeRows), 'Illnesses');
 
 
 
@@ -8727,8 +8736,12 @@ export default function App() {
 
     const dateStamp = new Date().toISOString().slice(0, 10);
 
-    XLSX.writeFile(workbook, `our-health-${safeName || 'member'}-${dateStamp}.xlsx`);
-
+    writeFile(workbook, `our-health-${safeName || 'member'}-${dateStamp}.xlsx`);
+    showSaveToast('Export saved.', 1800);
+    } catch (error) {
+      console.error('Failed to export workbook', error);
+      showSaveToast('Export failed. Please try again.', 2400);
+    }
   };
 
 
@@ -8742,6 +8755,20 @@ export default function App() {
 
 
   const hasFiles = householdReady && logReady;
+  const statusLabel = isOnline ? (drive.connected ? 'Connected' : 'Not connected') : 'Offline';
+  const statusDetail = drive.message
+    ? drive.message
+    : !isOnline
+    ? 'Sync paused while offline.'
+    : isLogSaving
+    ? 'Saving latest update...'
+    : driveAccountEmail ?? 'Autosave is ready.';
+  const saveToastTone =
+    saveToast && saveToast.toLowerCase().includes('fail')
+      ? 'error'
+      : saveToast && saveToast.toLowerCase().includes('saving')
+      ? 'saving'
+      : 'success';
 
   const getMemberLastActivityISO = (memberId: string): string | null => {
     const candidates: string[] = [];
@@ -9213,7 +9240,7 @@ export default function App() {
 
 
 
-    <div className="app-shell">
+    <div className={`app-shell ${isLogSaving ? 'is-saving' : ''}`} aria-busy={isLogSaving || drive.busy}>
 
 
 
@@ -9233,11 +9260,15 @@ export default function App() {
 
 
 
-            <div className="topbar-status" aria-live="polite">
+            <div className={`topbar-status ${isLogSaving ? 'saving' : ''}`} aria-live="polite">
 
 
 
-              <span className={`status-dot ${isOnline && drive.connected ? 'online' : 'offline'}`} />
+              <span
+                className={`status-dot ${isOnline && drive.connected ? 'online' : 'offline'} ${
+                  isLogSaving ? 'syncing' : ''
+                }`}
+              />
 
 
 
@@ -9249,7 +9280,7 @@ export default function App() {
 
 
 
-                  {isOnline ? (drive.connected ? 'Connected to Drive' : 'Drive not connected') : 'Offline'}
+                  {statusLabel}
 
 
 
@@ -9257,14 +9288,7 @@ export default function App() {
 
 
 
-                {driveAccountEmail && <span className="status-email">{driveAccountEmail}</span>}
-                <span className="status-message">Autosave writes every change to Drive when online.</span>
-                {isLogSaving && <span className="status-message">Saving latest log entry...</span>}
-
-
-
-                {!isOnline && <span className="status-message">Sync paused while offline.</span>}
-                {drive.message && <span className="status-message">{drive.message}</span>}
+                <span className="status-sub">{statusDetail}</span>
 
 
 
@@ -9383,7 +9407,11 @@ export default function App() {
 
       {localMessage && <p className="message">{localMessage}</p>}
 
-      {saveToast && <div className="save-toast" role="status">{saveToast}</div>}
+      {saveToast && (
+        <div className={`save-toast ${saveToastTone}`} role="status" aria-live="polite">
+          {saveToast}
+        </div>
+      )}
 
       <nav className="bottom-nav" aria-label="Primary">
         <button
